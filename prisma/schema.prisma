@@ -57,8 +57,12 @@ model Product {
   hueB         Int
   icon         String
   tags         String[]
+  /// 展示用聚合（= base 社会证明 与平台内真实评测的混合值）
   ratingScore  Float
   ratingCount  Int
+  /// 上架自带的历史评价社会证明（不以单条 Review 行存储），平台内新评测在此基础上混合
+  baseRatingScore Float @default(0)
+  baseRatingCount Int   @default(0)
   /// 近 10 期好评率（0-100）
   histogram    Int[]
   acquisitions Int
@@ -79,6 +83,8 @@ model Product {
 model Review {
   id         String  @id @default(cuid())
   productId  String
+  /// 平台注册作者（防同一用户重复评测）；种子/Agent 评测为 null
+  authorUserId String?
   /// 评测者去规范化（部分评测者非平台注册用户，如 Agent）
   authorName String
   avatarHue  Int

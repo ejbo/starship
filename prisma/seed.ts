@@ -51,6 +51,8 @@ async function main() {
         tags: p.tags,
         ratingScore: p.rating.score,
         ratingCount: p.rating.count,
+        baseRatingScore: p.rating.score,
+        baseRatingCount: p.rating.count,
         histogram: p.rating.histogram,
         acquisitions: p.acquisitions,
         developer: p.developer,

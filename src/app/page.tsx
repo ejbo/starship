@@ -3,6 +3,8 @@ import { HeroCarousel } from "@/components/store/hero-carousel";
 import { SectionRow } from "@/components/store/section-row";
 import { getByType, getDiscoveryQueue, getFeatured } from "@/lib/catalog";
 
+export const dynamic = "force-dynamic";
+
 export default async function StorePage() {
   const [featured, discovery, apps, models, agents, skills, tutorials, videos] = await Promise.all([
     getFeatured(),

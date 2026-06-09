@@ -2,13 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft, Globe, ShieldCheck } from "lucide-react";
 import { CapsuleArt } from "@/components/ui/capsule-art";
-import { describeCapability, getAllProducts, getBySlug } from "@/lib/catalog";
+import { describeCapability, getBySlug } from "@/lib/catalog";
 
-export async function generateStaticParams() {
-  return (await getAllProducts())
-    .filter((p) => p.entry)
-    .map((p) => ({ slug: p.slug }));
-}
+export const dynamic = "force-dynamic";
 
 /**
  * 沙箱启动页：应用由开发者独立部署，平台在此以 iframe/webview 沙箱加载其入口 URL，

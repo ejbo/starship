@@ -49,6 +49,8 @@ function FeedCard({ event, product }: { event: ActivityEvent; product?: Product 
   );
 }
 
+export const dynamic = "force-dynamic";
+
 export default async function CommunityPage() {
   const [feed, allProducts] = await Promise.all([getFeed(), getAllProducts()]);
   const roundtables = getLiveRoundtables();

@@ -1,15 +1,36 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { Check, Download, Play } from "lucide-react";
+import { useState, useTransition } from "react";
+import { Check, Download, Loader2, Play, Plus } from "lucide-react";
+import { acquireAction, removeAction } from "@/app/p/[slug]/actions";
 import { cn } from "@/lib/cn";
 import type { Product } from "@/lib/types";
 
-/** 获取盒：价格 + 入库按钮（Phase 0 本地状态模拟）；应用入库后可启动 */
-export function AcquireBox({ product }: { product: Product }) {
-  const [acquired, setAcquired] = useState(false);
+interface AcquireBoxProps {
+  product: Product;
+  acquired: boolean;
+  /** 未登录时为 true：按钮引导去登录 */
+  signedOut?: boolean;
+}
+
+/** 获取盒：价格 + 入库/移除（真实写库）；应用入库后可启动 */
+export function AcquireBox({ product, acquired, signedOut }: AcquireBoxProps) {
+  const [isAcquired, setIsAcquired] = useState(acquired);
+  const [pending, startTransition] = useTransition();
   const free = product.price === "free";
+
+  const toggle = () => {
+    startTransition(async () => {
+      if (isAcquired) {
+        await removeAction(product.slug);
+        setIsAcquired(false);
+      } else {
+        await acquireAction(product.slug);
+        setIsAcquired(true);
+      }
+    });
+  };
 
   return (
     <div className="capsule space-y-4 p-5">
@@ -24,25 +45,39 @@ export function AcquireBox({ product }: { product: Product }) {
         )}
       </div>
 
-      <button
-        onClick={() => setAcquired((a) => !a)}
-        className={cn(
-          "w-full rounded-md py-2.5 text-sm font-medium transition-colors",
-          acquired
-            ? "border border-free/40 bg-free/8 text-free"
-            : "bg-accent text-white hover:bg-accent-deep",
-        )}
-      >
-        {acquired ? (
-          <span className="inline-flex items-center gap-1.5">
-            <Check className="size-4" /> 已在库中
-          </span>
-        ) : (
-          "添加至库"
-        )}
-      </button>
+      {signedOut ? (
+        <Link
+          href="/login"
+          className="block w-full rounded-md bg-accent py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-accent-deep"
+        >
+          登录后添加至库
+        </Link>
+      ) : (
+        <button
+          onClick={toggle}
+          disabled={pending}
+          className={cn(
+            "flex w-full items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition-colors disabled:opacity-60",
+            isAcquired
+              ? "border border-free/40 bg-free/8 text-free hover:border-danger/40 hover:bg-danger/8 hover:text-danger"
+              : "bg-accent text-white hover:bg-accent-deep",
+          )}
+        >
+          {pending ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : isAcquired ? (
+            <>
+              <Check className="size-4" /> 已在库中
+            </>
+          ) : (
+            <>
+              <Plus className="size-4" /> 添加至库
+            </>
+          )}
+        </button>
+      )}
 
-      {acquired && product.entry && (
+      {isAcquired && !signedOut && product.entry && (
         <Link
           href={`/run/${product.slug}`}
           className="flex w-full items-center justify-center gap-1.5 rounded-md border border-accent/40 bg-accent/8 py-2.5 text-sm font-medium text-accent transition-colors hover:bg-accent/15"

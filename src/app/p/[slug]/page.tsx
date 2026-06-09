@@ -4,18 +4,24 @@ import { ChevronRight } from "lucide-react";
 import { AcquireBox } from "@/components/product/acquire-box";
 import { CapabilityList } from "@/components/product/capability-list";
 import { MediaGallery } from "@/components/product/media-gallery";
+import { ReviewForm } from "@/components/product/review-form";
 import { ReviewSection } from "@/components/product/review-section";
 import { TypeBadge, typeMeta } from "@/components/ui/type-badge";
-import { getAllProducts, getBySlug } from "@/lib/catalog";
+import { getBySlug } from "@/lib/catalog";
+import { isInLibrary } from "@/lib/library-service";
+import { getMyReview } from "@/lib/review-service";
+import { getSessionUserIdOrNull } from "@/lib/session";
 
-export async function generateStaticParams() {
-  return (await getAllProducts()).map((p) => ({ slug: p.slug }));
-}
+export const dynamic = "force-dynamic";
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const product = await getBySlug(slug);
   if (!product) notFound();
+
+  const userId = await getSessionUserIdOrNull();
+  const acquired = userId ? await isInLibrary(slug) : false;
+  const myReview = userId ? await getMyReview(slug) : null;
 
   return (
     <main className="mx-auto max-w-7xl px-4 pt-6 sm:px-6">
@@ -49,12 +55,13 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             ))}
           </section>
 
+          {userId && <ReviewForm slug={product.slug} initial={myReview} />}
           <ReviewSection product={product} />
         </div>
 
         {/* 右侧栏 */}
         <aside className="space-y-4 lg:sticky lg:top-18 lg:self-start">
-          <AcquireBox product={product} />
+          <AcquireBox product={product} acquired={acquired} signedOut={!userId} />
           <CapabilityList capabilities={product.capabilities} />
           <div className="capsule p-5">
             <h3 className="mb-2.5 text-sm font-semibold">标签</h3>

@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Product" ADD COLUMN     "baseRatingCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "baseRatingScore" DOUBLE PRECISION NOT NULL DEFAULT 0;

@@ -6,9 +6,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { getProductIcon } from "@/lib/icons";
 import { getBySlug, getCurrentUser, getFriends, getWallPosts } from "@/lib/catalog";
 
-export function generateStaticParams() {
-  return [{ handle: "me" }];
-}
+export const dynamic = "force-dynamic";
 
 export default async function ProfilePage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params;

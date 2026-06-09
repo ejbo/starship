@@ -50,6 +50,8 @@ function ShelfCard({ item }: { item: LibraryItem }) {
   );
 }
 
+export const dynamic = "force-dynamic";
+
 export default async function LibraryPage() {
   const library = await getLibrary();
   const recent = library.slice(0, 3);
