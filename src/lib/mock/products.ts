@@ -3,6 +3,40 @@ import type { Product } from "@/lib/types";
 /** Phase 0 假数据。形状即 Phase 1 catalog service 的返回形状。 */
 export const products: Product[] = [
   {
+    id: "p-015",
+    slug: "sdk-playground",
+    type: "app",
+    name: "SDK Playground",
+    tagline: "Platform SDK 的活体示例 —— 在沙箱里真实调用身份、AI 与存储",
+    description: [
+      "官方参考应用：演示第三方应用如何通过 @starport/sdk 使用平台能力。打开后，应用在沙箱 iframe 中运行，经 postMessage 与平台通信。",
+      "它能拿到你的公开身份、经 Gateway 代理发起 AI 对话、读写自己的隔离存储 —— 但全程接触不到你的 API Key。这就是星港 App Runtime 的工作方式。",
+    ],
+    art: { hueA: 205, hueB: 250, icon: "braces" },
+    tags: ["官方示例", "SDK", "Runtime", "开发者"],
+    rating: { score: 4.9, count: 128, histogram: [94, 95, 96, 95, 97, 96, 98, 97, 98, 99] },
+    acquisitions: 3120,
+    developer: "星港官方示例",
+    version: "v1.0.0",
+    entry: { kind: "sandbox", url: "/sandbox-demo.html" },
+    price: "free",
+    capabilities: ["llm:claude", "storage:256mb"],
+    releasedAt: "2026-06-09",
+    updatedAt: "2026-06-09",
+    featured: false,
+    reviews: [
+      {
+        author: "老猫",
+        avatarHue: 40,
+        score: 5,
+        usageHours: 5,
+        helpful: 47,
+        body: "看 SDK 桥接监视器里身份、AI、存储的调用一条条跑出来，比读十页文档都清楚。",
+        date: "2026-06-09",
+      },
+    ],
+  },
+  {
     id: "p-001",
     slug: "multillm-chat",
     type: "app",

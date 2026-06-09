@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SDK Playground</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "PingFang SC", system-ui, sans-serif;
+        background: #fafbfd;
+        color: #1c2433;
+        padding: 20px;
+      }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      .sub { color: #5a6474; font-size: 13px; margin: 0 0 16px; }
+      .card {
+        border: 1px solid #e1e6ee;
+        border-radius: 8px;
+        background: #fff;
+        padding: 14px;
+        margin-bottom: 12px;
+      }
+      .card h2 { font-size: 13px; margin: 0 0 8px; color: #5a6474; }
+      .id { display: flex; align-items: center; gap: 10px; }
+      .avatar { width: 36px; height: 36px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; }
+      input, button { font: inherit; }
+      input {
+        border: 1px solid #e1e6ee; border-radius: 6px; padding: 7px 10px; width: 100%;
+      }
+      button {
+        border: 0; border-radius: 6px; background: #2563eb; color: #fff;
+        padding: 7px 14px; cursor: pointer; font-weight: 500;
+      }
+      button:hover { background: #1d4ed8; }
+      .row { display: flex; gap: 8px; align-items: center; }
+      .reply { margin-top: 10px; font-size: 13px; line-height: 1.6; background: #f3f5f8; border-radius: 6px; padding: 10px; }
+      .muted { color: #98a1b3; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>SDK Playground</h1>
+    <p class="sub">一个演示应用，展示通过 Platform SDK 使用平台身份、AI 与存储能力。</p>
+
+    <div class="card">
+      <h2>身份 · starport.getIdentity()</h2>
+      <div class="id">
+        <span class="avatar" id="avatar">·</span>
+        <div>
+          <div id="uname" style="font-weight: 600">加载中…</div>
+          <div class="muted" id="uhandle"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>AI 对话 · starport.ai.chat()</h2>
+      <div class="row">
+        <input id="prompt" placeholder="问点什么……" value="用一句话介绍这个平台" />
+        <button id="ask" style="white-space: nowrap">发送</button>
+      </div>
+      <div class="reply" id="reply">（AI 回复将显示在这里）</div>
+    </div>
+
+    <div class="card">
+      <h2>应用存储 · starport.storage</h2>
+      <div class="row">
+        <input id="note" placeholder="写点东西，会被保存" />
+        <button id="save" style="white-space: nowrap">保存</button>
+      </div>
+      <p class="muted" id="storeStatus" style="margin-top: 8px">读取已保存的内容…</p>
+    </div>
+
+    <script src="/starport-sdk.js"></script>
+    <script>
+      (async function () {
+        function hue(s) { var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; }
+
+        // 身份
+        try {
+          var ident = await window.starport.getIdentity();
+          document.getElementById("uname").textContent = ident.name;
+          document.getElementById("uhandle").textContent = "@" + ident.handle;
+          var av = document.getElementById("avatar");
+          av.textContent = ident.name.slice(0, 1);
+          av.style.background = "hsl(" + ident.avatarHue + " 45% 50%)";
+        } catch (e) {
+          document.getElementById("uname").textContent = "未登录";
+        }
+
+        // AI
+        document.getElementById("ask").addEventListener("click", async function () {
+          var prompt = document.getElementById("prompt").value;
+          document.getElementById("reply").textContent = "思考中…";
+          try {
+            var res = await window.starport.ai.chat(prompt);
+            document.getElementById("reply").textContent = res.reply;
+          } catch (e) {
+            document.getElementById("reply").textContent = "出错：" + e.message;
+          }
+        });
+
+        // 存储：载入 + 保存
+        var saved = await window.starport.storage.get("note");
+        document.getElementById("storeStatus").textContent = saved ? "已保存：" + saved : "暂无已保存内容";
+        if (saved) document.getElementById("note").value = saved;
+        document.getElementById("save").addEventListener("click", async function () {
+          var v = document.getElementById("note").value;
+          await window.starport.storage.set("note", v);
+          document.getElementById("storeStatus").textContent = "已保存：" + v + "（刷新仍在）";
+        });
+      })();
+    </script>
+  </body>
+</html>

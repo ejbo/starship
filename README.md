@@ -23,7 +23,7 @@ pnpm dev          # http://localhost:3000
 |---|---|
 | `/` | 商店：精选轮播、发现队列、分类行 |
 | `/p/[slug]` | 产品详情：画廊、获取、运行要求、评测 |
-| `/run/[slug]` | 应用沙箱启动页（占位，Phase 4 实装 iframe + SDK） |
+| `/run/[slug]` | App Runtime：沙箱 iframe 加载应用 + Platform SDK 桥接（试 `/run/sdk-playground`）|
 | `/library` | 库：最近使用 + 全部，应用可启动 |
 | `/u/me` | 个人主页：展柜、徽章、统计、留言板 |
 | `/community` | 动态 Feed + 进行中的圆桌 |

@@ -42,6 +42,7 @@ model User {
   friendsIn    FriendEdge[]    @relation("FriendB")
   credentials  ApiCredential[]
   usage        UsageRecord[]
+  appStorage   AppStorage[]
   messagesSent     Message[]   @relation("MsgFrom")
   messagesReceived Message[]   @relation("MsgTo")
 }
@@ -171,6 +172,18 @@ model UsageRecord {
   user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, day])
+}
+
+model AppStorage {
+  id          String @id @default(cuid())
+  userId      String
+  /// 应用隔离：每应用每用户独立命名空间
+  productSlug String
+  key         String
+  value       String
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productSlug, key])
 }
 
 model ActivityEvent {

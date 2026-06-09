@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ChevronLeft, Globe, ShieldCheck } from "lucide-react";
+import { ChevronLeft, ShieldCheck } from "lucide-react";
+import { RunSandbox } from "@/components/runtime/run-sandbox";
 import { CapsuleArt } from "@/components/ui/capsule-art";
 import { describeCapability, getBySlug } from "@/lib/catalog";
 import { setActivity } from "@/lib/friends-service";
@@ -9,8 +10,8 @@ import { getSessionUserIdOrNull } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 /**
- * 沙箱启动页：应用由开发者独立部署，平台在此以 iframe/webview 沙箱加载其入口 URL，
- * 并注入 Platform SDK（身份、Gateway、存储、社交授权）。Phase 4 实装，当前为占位。
+ * App Runtime 启动页：应用由开发者独立部署，平台在沙箱 iframe 中加载其入口 URL，
+ * 经 postMessage 注入 Platform SDK（身份、Gateway、存储）。见 RunSandbox。
  */
 export default async function RunPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -18,7 +19,7 @@ export default async function RunPage({ params }: { params: Promise<{ slug: stri
   const product = await getBySlug(slug);
   if (!product || !product.entry) notFound();
 
-  // 上报"正在使用 X"，反哺好友在线状态
+  // 上报正在使用的应用，反哺好友在线状态
   await setActivity(product.name);
 
   return (
@@ -37,34 +38,23 @@ export default async function RunPage({ params }: { params: Promise<{ slug: stri
         <span className="text-xs text-mute">
           {product.developer} · {product.version}
         </span>
-        <span className="ml-auto flex items-center gap-1.5 text-xs text-free">
-          <ShieldCheck className="size-3.5" /> 沙箱运行
-        </span>
-      </div>
-
-      {/* 应用区域（Phase 4 实装 iframe 加载） */}
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 rounded-b-lg border border-t-0 border-line bg-card-hi/50 px-6 py-16 text-center">
-        <CapsuleArt art={product.art} ratio="square" className="w-20 rounded-xl" iconClassName="size-1/2" />
-        <div className="max-w-md space-y-2">
-          <p className="text-sm font-medium text-ink">应用由 {product.developer} 独立部署</p>
-          <p className="text-sm leading-relaxed text-dim">
-            正式版中，这里将在沙箱中加载{" "}
-            <span className="inline-flex items-center gap-1 rounded bg-card-hi px-1.5 py-0.5 text-xs text-dim">
-              <Globe className="size-3" />
-              {product.entry.url}
-            </span>{" "}
-            并注入 Platform SDK —— 应用经你的授权使用以下能力，但接触不到你的 API Key：
-          </p>
-        </div>
-        <div className="flex max-w-md flex-wrap justify-center gap-1.5">
+        <span className="ml-3 hidden items-center gap-1.5 sm:flex">
           {product.capabilities.map((cap) => (
-            <span key={cap} className="rounded border border-line bg-panel px-2 py-1 text-xs text-dim">
+            <span key={cap} className="rounded border border-line bg-page px-1.5 py-0.5 text-[11px] text-mute">
               {describeCapability(cap).name}
             </span>
           ))}
-        </div>
-        <p className="text-xs text-mute">App Runtime 于 Phase 4 实装</p>
+        </span>
+        <span className="ml-auto flex items-center gap-1.5 text-xs text-free">
+          <ShieldCheck className="size-3.5" /> 沙箱运行 · Key 不出平台
+        </span>
       </div>
+
+      <RunSandbox slug={product.slug} entryUrl={product.entry.url} appName={product.name} />
+
+      <p className="mt-3 text-center text-xs text-mute">
+        其他应用入口为外部部署地址（开发者独立部署），此处演示用同源参考应用 {product.entry.url}
+      </p>
     </main>
   );
 }
