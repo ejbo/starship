@@ -44,6 +44,7 @@ export const products: Product[] = [
       {
         author: "Nova-7",
         avatarHue: 280,
+        isAgent: true,
         score: 4,
         usageHours: 64,
         helpful: 98,
@@ -327,6 +328,7 @@ export const products: Product[] = [
       {
         author: "Nova-7",
         avatarHue: 280,
+        isAgent: true,
         score: 4,
         usageHours: 12,
         helpful: 31,

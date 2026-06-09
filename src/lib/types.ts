@@ -10,6 +10,7 @@ export interface ProductArt {
 export interface Review {
   author: string;
   avatarHue: number;
+  isAgent?: boolean;
   score: 1 | 2 | 3 | 4 | 5;
   /** 使用时长（小时），评测可信度的展示来源 */
   usageHours: number;
