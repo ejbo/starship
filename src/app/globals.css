@@ -1,113 +1,55 @@
 @import "tailwindcss";
 
 @theme {
-  /* 深空港湾色板 */
-  --color-abyss: #070b16;
-  --color-panel: #0d1424;
-  --color-card: #121b31;
-  --color-card-hi: #182343;
-  --color-line: #20294a;
-  --color-ink: #e2e9ff;
-  --color-dim: #8b96b5;
-  --color-mute: #59648a;
-  /* 极光 */
-  --color-aurora: #53d8ff;
-  --color-nebula: #9d7bff;
-  --color-teal: #2dd4a7;
-  --color-gold: #ffc46b;
-  --color-danger: #ff6b81;
+  /* 明亮简洁色板 */
+  --color-page: #f3f5f8;
+  --color-panel: #ffffff;
+  --color-card: #ffffff;
+  --color-card-hi: #eef1f6;
+  --color-line: #e1e6ee;
+  --color-ink: #1c2433;
+  --color-dim: #5a6474;
+  --color-mute: #98a1b3;
+  /* 强调与语义色 */
+  --color-accent: #2563eb;
+  --color-accent-deep: #1d4ed8;
+  --color-good: #2563eb;
+  --color-free: #1f9d55;
+  --color-warn: #b07d1e;
+  --color-danger: #d64545;
+  --color-star: #f0a330;
+  --color-purple: #7c5cd6;
+  --color-green: #189a74;
 
-  --font-display: var(--font-chakra), "PingFang SC", system-ui, sans-serif;
-
-  --radius-capsule: 10px;
+  --radius-card: 8px;
 }
 
 @keyframes fade-up {
-  from { opacity: 0; transform: translateY(14px); }
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes drift {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(4%, -3%, 0) scale(1.08); }
-}
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
 }
 
 body {
   font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
-  background: var(--color-abyss);
+  background: var(--color-page);
   color: var(--color-ink);
   overflow-x: hidden;
 }
 
 ::selection {
-  background: rgb(83 216 255 / 0.28);
+  background: rgb(37 99 235 / 0.15);
 }
 
-/* —— 大气层：极光 + 星野 —— */
-.atmosphere {
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  pointer-events: none;
-  background:
-    radial-gradient(900px 520px at 12% -8%, rgb(83 216 255 / 0.10), transparent 60%),
-    radial-gradient(1100px 600px at 88% -12%, rgb(157 123 255 / 0.12), transparent 62%),
-    radial-gradient(800px 800px at 50% 120%, rgb(45 212 167 / 0.05), transparent 60%);
-  animation: drift 26s ease-in-out infinite;
-}
-
-.starfield {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 0.5;
-  background-image:
-    radial-gradient(1px 1px at 13px 47px, rgb(226 233 255 / 0.9), transparent 1px),
-    radial-gradient(1px 1px at 97px 23px, rgb(226 233 255 / 0.5), transparent 1px),
-    radial-gradient(1.5px 1.5px at 161px 89px, rgb(131 216 255 / 0.7), transparent 1.5px),
-    radial-gradient(1px 1px at 213px 137px, rgb(226 233 255 / 0.4), transparent 1px),
-    radial-gradient(1px 1px at 53px 181px, rgb(196 173 255 / 0.6), transparent 1px),
-    radial-gradient(1.5px 1.5px at 137px 211px, rgb(226 233 255 / 0.55), transparent 1.5px),
-    radial-gradient(1px 1px at 191px 31px, rgb(226 233 255 / 0.35), transparent 1px);
-  background-size: 240px 240px;
-}
-
-/* —— 噪点颗粒（叠在封装画上消除"纯渐变感"） —— */
-.grain::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.5;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.10 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-.glass {
-  background: rgb(13 20 36 / 0.72);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
-/* 卡片基底 + 悬浮辉光 */
+/* 卡片基底：白底细边框，hover 仅轻微抬升边框色与阴影 */
 .capsule {
   border: 1px solid var(--color-line);
-  border-radius: var(--radius-capsule);
+  border-radius: var(--radius-card);
   background: var(--color-card);
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .capsule:hover {
-  transform: translateY(-3px);
-  border-color: rgb(83 216 255 / 0.45);
-  box-shadow:
-    0 12px 32px -12px rgb(0 0 0 / 0.7),
-    0 0 0 1px rgb(83 216 255 / 0.12),
-    0 0 28px -6px rgb(83 216 255 / 0.25);
+  border-color: #c7d2e4;
+  box-shadow: 0 4px 16px -8px rgb(28 36 51 / 0.14);
 }
 
 @utility scrollbar-hide {
@@ -115,11 +57,4 @@ body {
   &::-webkit-scrollbar {
     display: none;
   }
-}
-
-@utility text-aurora-gradient {
-  background: linear-gradient(100deg, var(--color-aurora), var(--color-nebula));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
 }

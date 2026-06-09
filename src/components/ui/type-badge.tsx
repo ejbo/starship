@@ -1,13 +1,13 @@
 import { cn } from "@/lib/cn";
 import type { ProductType } from "@/lib/types";
 
-export const typeMeta: Record<ProductType, { label: string; en: string; className: string }> = {
-  app: { label: "应用", en: "APP", className: "text-aurora border-aurora/40 bg-aurora/10" },
-  model: { label: "模型", en: "MODEL", className: "text-nebula border-nebula/40 bg-nebula/10" },
-  agent: { label: "Agent", en: "AGENT", className: "text-teal border-teal/40 bg-teal/10" },
-  skill: { label: "Skill", en: "SKILL", className: "text-gold border-gold/40 bg-gold/10" },
-  tutorial: { label: "互动教程", en: "TUTORIAL", className: "text-[#ff8fb8] border-[#ff8fb8]/40 bg-[#ff8fb8]/10" },
-  video: { label: "视频", en: "VIDEO", className: "text-[#ffa06e] border-[#ffa06e]/40 bg-[#ffa06e]/10" },
+export const typeMeta: Record<ProductType, { label: string; className: string }> = {
+  app: { label: "应用", className: "text-accent bg-accent/8" },
+  model: { label: "模型", className: "text-purple bg-purple/8" },
+  agent: { label: "Agent", className: "text-green bg-green/8" },
+  skill: { label: "Skill", className: "text-warn bg-warn/8" },
+  tutorial: { label: "教程", className: "text-[#c2417e] bg-[#c2417e]/8" },
+  video: { label: "视频", className: "text-[#c05621] bg-[#c05621]/8" },
 };
 
 export function TypeBadge({ type, className }: { type: ProductType; className?: string }) {
@@ -15,13 +15,12 @@ export function TypeBadge({ type, className }: { type: ProductType; className?: 
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-display text-[10px] font-semibold tracking-widest",
+        "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium",
         meta.className,
         className,
       )}
     >
-      {meta.en}
-      <span className="font-sans font-normal tracking-normal">{meta.label}</span>
+      {meta.label}
     </span>
   );
 }

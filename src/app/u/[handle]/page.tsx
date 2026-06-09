@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { Anchor, Clock, MessageSquare, Star } from "lucide-react";
+import { Clock, LayoutGrid, MessageSquare, Star } from "lucide-react";
 import { FriendList } from "@/components/profile/friend-list";
 import { Showcase } from "@/components/profile/showcase";
 import { Avatar } from "@/components/ui/avatar";
@@ -27,26 +27,18 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
 
   return (
     <main className="mx-auto max-w-7xl px-4 sm:px-6">
-      {/* 星云横幅 */}
-      <div
-        className="relative -mx-4 h-44 overflow-hidden sm:-mx-6"
-        style={{
-          background:
-            "radial-gradient(800px 300px at 20% 100%, rgb(83 216 255 / .18), transparent 60%), radial-gradient(700px 280px at 80% 0%, rgb(157 123 255 / .2), transparent 60%), linear-gradient(160deg, #0d1424, #131c33)",
-        }}
-      >
-        <div className="starfield absolute inset-0 opacity-70" style={{ position: "absolute" }} />
-      </div>
+      {/* 横幅 */}
+      <div className="-mx-4 h-36 bg-gradient-to-r from-[#dbe5f3] via-[#e7edf6] to-[#dfe9f2] sm:-mx-6" />
 
       {/* 头像与身份 */}
-      <header className="relative z-10 -mt-12 flex flex-wrap items-end gap-5 animate-[fade-up_.5s_ease_both]">
-        <span className="rounded-full p-1 ring-2 ring-aurora/50 bg-abyss shadow-[0_0_30px_-6px_rgb(83_216_255/.5)]">
+      <header className="relative z-10 -mt-10 flex flex-wrap items-end gap-5">
+        <span className="rounded-full bg-panel p-1 shadow-[0_2px_12px_-4px_rgb(28_36_51/.2)]">
           <Avatar name={user.name} hue={user.avatarHue} size="xl" />
         </span>
         <div className="pb-1">
           <h1 className="flex items-center gap-3 text-2xl font-bold">
             {user.name}
-            <span className="flex items-center gap-1 rounded-full border border-gold/40 bg-gold/10 px-2.5 py-0.5 font-display text-xs font-bold text-gold">
+            <span className="rounded-full border border-line bg-panel px-2.5 py-0.5 text-xs font-semibold text-dim">
               Lv.{user.level}
             </span>
           </h1>
@@ -56,8 +48,8 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
           {user.badges.map((badge) => {
             const Icon = getProductIcon(badge.icon);
             return (
-              <span key={badge.label} className="flex items-center gap-1.5 rounded-md border border-line bg-panel/70 px-2.5 py-1.5 text-xs text-dim">
-                <Icon className="size-3.5 text-gold" /> {badge.label}
+              <span key={badge.label} className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-2.5 py-1.5 text-xs text-dim">
+                <Icon className="size-3.5 text-accent" /> {badge.label}
               </span>
             );
           })}
@@ -66,18 +58,18 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_300px]">
         {/* 左主栏 */}
-        <div className="min-w-0 space-y-6 animate-[fade-up_.5s_ease_both]" style={{ animationDelay: "100ms" }}>
+        <div className="min-w-0 space-y-6">
           {/* 统计 */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
-              { icon: Anchor, label: "停泊造物", value: String(user.library.length) },
+              { icon: LayoutGrid, label: "库中产品", value: String(user.library.length) },
               { icon: Clock, label: "总使用时长", value: `${totalHours}h` },
               { icon: Star, label: "评测", value: "17" },
               { icon: MessageSquare, label: "圆桌主持", value: "9" },
             ].map(({ icon: Icon, label, value }) => (
-              <div key={label} className="capsule p-4 text-center hover:translate-y-0">
-                <Icon className="mx-auto mb-1.5 size-4 text-aurora/70" />
-                <p className="font-display text-xl font-bold">{value}</p>
+              <div key={label} className="capsule p-4 text-center">
+                <Icon className="mx-auto mb-1.5 size-4 text-accent/70" />
+                <p className="text-xl font-bold">{value}</p>
                 <p className="text-xs text-mute">{label}</p>
               </div>
             ))}
@@ -86,20 +78,18 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
           <Showcase products={showcase} />
 
           {/* 最近动态 */}
-          <div className="capsule p-5 hover:translate-y-0">
-            <h3 className="mb-3 flex items-baseline gap-2 text-sm font-semibold">
-              最近动态 <span className="font-display text-[10px] tracking-[0.25em] text-mute">ACTIVITY</span>
-            </h3>
+          <div className="capsule p-5">
+            <h3 className="mb-3 text-sm font-semibold">最近动态</h3>
             <ul className="space-y-2.5">
               {recentlyUsed.map((entry) => {
                 const product = getBySlug(entry.slug);
                 if (!product) return null;
                 return (
                   <li key={entry.slug} className="flex items-center gap-2 text-sm text-dim">
-                    <span className="size-1.5 rounded-full bg-aurora/70" />
+                    <span className="size-1.5 rounded-full bg-accent/60" />
                     {entry.lastUsedAt} 使用了
                     <span className="font-medium text-ink">{product.name}</span>
-                    <span className="ml-auto font-display text-xs text-mute">{entry.usageHours}h</span>
+                    <span className="ml-auto text-xs text-mute">{entry.usageHours}h</span>
                   </li>
                 );
               })}
@@ -108,9 +98,9 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
         </div>
 
         {/* 右侧栏 */}
-        <aside className="space-y-4 animate-[fade-up_.5s_ease_both]" style={{ animationDelay: "160ms" }}>
+        <aside className="space-y-4">
           <FriendList friends={friends} />
-          <div className="capsule p-5 hover:translate-y-0">
+          <div className="capsule p-5">
             <h3 className="mb-3 text-sm font-semibold">留言板</h3>
             <ul className="space-y-3.5">
               {wallPosts.map((post) => (

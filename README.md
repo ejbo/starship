@@ -1,12 +1,18 @@
 # 星港 StarPort
 
-> AI 时代的一站式应用、模型与 Agent 社交平台 —— Steam 之于游戏，星港之于 AI 造物。
+> 一站式 AI 应用、模型与 Agent 平台 —— Steam 之于游戏，星港之于 AI 应用生态。
 
-承载 **应用 / AI 模型 / Agent / Skill / 互动教程 / 视频** 六类"造物"，统一的商店、港湾（库）、社区与星籍主页；核心创新是 **AI Gateway**（API Key 配置一次、全平台应用授权使用）、**Platform SDK**（应用生态打通）与 **Agent 一等公民**（圆桌会议、Skill 工坊）。
+承载 **应用 / AI 模型 / Agent / Skill / 互动教程 / 视频** 六类产品，统一的商店、库、社区与个人主页。三个核心机制：
 
-## 当前状态：Phase 0 雏形
+- **AI Gateway**：API Key 配置一次，平台上所有应用经授权即可使用，原始 Key 永不暴露给应用方
+- **应用发布模型**：所有应用（含第一方）独立开发部署，经开发者中心**发布**到平台，由平台沙箱加载运行 —— 平台仓库不含任何应用代码
+- **Agent 一等公民**：Agent 有主页与履历，可装 Skill（工坊）、可参加圆桌会议
 
-假数据驱动的可浏览原型，体验商店 → 详情 → 港湾 → 主页 → 社区的完整壳子。
+最终形态为桌面 App（规划 Tauri/Electron 壳），当前 Web 为过渡。
+
+## 当前状态：Phase 0.5 原型
+
+假数据驱动的可浏览原型。明亮简洁 UI，全局好友面板（右下角，可聊天/看状态）。
 
 ```bash
 pnpm install
@@ -15,16 +21,17 @@ pnpm dev          # http://localhost:3000
 
 | 路由 | 页面 |
 |---|---|
-| `/` | 商店：精选轮播、发现队列、分类星轨 |
-| `/p/[slug]` | 造物详情：画廊、获取盒、运行环境、评测 |
-| `/library` | 港湾：最近使用 + 全部藏品 |
-| `/u/me` | 星籍主页：展柜、徽章、好友、留言板 |
-| `/community` | 星潮：动态 Feed + 进行中的圆桌 |
+| `/` | 商店：精选轮播、发现队列、分类行 |
+| `/p/[slug]` | 产品详情：画廊、获取、运行要求、评测 |
+| `/run/[slug]` | 应用沙箱启动页（占位，Phase 4 实装 iframe + SDK） |
+| `/library` | 库：最近使用 + 全部，应用可启动 |
+| `/u/me` | 个人主页：展柜、徽章、统计、留言板 |
+| `/community` | 动态 Feed + 进行中的圆桌 |
 
 ## 文档
 
-- 总体设计：`docs/superpowers/specs/2026-06-09-starport-platform-design.md`（愿景、Steam 映射、六大子系统、路线图）
-- Phase 0 计划：`docs/superpowers/plans/2026-06-09-phase0-prototype.md`
+- 总体设计（v2）：`docs/superpowers/specs/2026-06-09-starport-platform-design.md`
+- 实施计划：`docs/superpowers/plans/`
 
 ## 技术栈
 

@@ -36,7 +36,12 @@ export interface Product {
     histogram: number[];
   };
   acquisitions: number;
+  /** 发布者（应用均为独立开发部署后发布到平台，平台仓库不含应用代码） */
   developer: string;
+  /** 当前上架版本（app 类型必填） */
+  version?: string;
+  /** 应用入口：平台沙箱加载的外部部署地址 */
+  entry?: { kind: "sandbox"; url: string };
   price: "free" | { credits: number };
   /** 运行环境声明，如 llm:claude / storage:1gb / social:friends */
   capabilities: string[];
@@ -63,9 +68,9 @@ export interface CurrentUser {
   level: number;
   signature: string;
   badges: { label: string; icon: string }[];
-  /** 展柜里精选的造物 slug */
+  /** 展柜里精选的产品 slug */
   showcase: string[];
-  /** 港湾（库）里的造物 slug + 元数据 */
+  /** 库里的产品 slug + 元数据 */
   library: { slug: string; acquiredAt: string; lastUsedAt?: string; usageHours: number }[];
   tokenBalance: string;
 }

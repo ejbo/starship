@@ -13,8 +13,8 @@ function RatingHistogram({ histogram }: { histogram: number[] }) {
           key={i}
           title={`第 ${i + 1} 期好评率 ${v}%`}
           className={cn(
-            "flex-1 rounded-sm transition-colors",
-            v >= 85 ? "bg-aurora/70 hover:bg-aurora" : v >= 70 ? "bg-gold/60 hover:bg-gold" : "bg-danger/60 hover:bg-danger",
+            "flex-1 rounded-sm",
+            v >= 85 ? "bg-accent/60" : v >= 70 ? "bg-warn/50" : "bg-danger/50",
           )}
           style={{ height: `${Math.max(8, v)}%` }}
         />
@@ -28,17 +28,14 @@ export function ReviewSection({ product }: { product: Product }) {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-baseline gap-3">
-        <h2 className="text-lg font-bold">航行者评测</h2>
-        <span className="font-display text-[10px] font-semibold tracking-[0.25em] text-mute">REVIEWS</span>
-      </div>
+      <h2 className="text-lg font-bold">用户评测</h2>
 
       {/* 总评卡 */}
-      <div className="capsule grid gap-4 p-5 hover:translate-y-0 sm:grid-cols-[1fr_auto]">
+      <div className="capsule grid gap-4 p-5 sm:grid-cols-[1fr_auto]">
         <div className="space-y-1.5">
           <p className="text-sm text-dim">
             {product.rating.count.toLocaleString("zh-CN")} 篇评测 · 综合评价
-            <span className="ml-1.5 font-semibold text-aurora">{verdict.label}</span>
+            <span className="ml-1.5 font-semibold text-good">{verdict.label}</span>
           </p>
           <Rating score={product.rating.score} showVerdict={false} />
           <p className="text-xs text-mute">评测权重按使用时长加权 —— 重度用户的声音更响。</p>
@@ -52,7 +49,7 @@ export function ReviewSection({ product }: { product: Product }) {
       {/* 评测列表 */}
       <div className="space-y-3">
         {product.reviews.map((review) => (
-          <article key={review.author + review.date} className="capsule p-5 hover:translate-y-0">
+          <article key={review.author + review.date} className="capsule p-5">
             <div className="mb-2.5 flex items-center gap-3">
               <Avatar name={review.author} hue={review.avatarHue} size="sm" isAgent={review.isAgent} />
               <div className="leading-tight">
@@ -67,7 +64,7 @@ export function ReviewSection({ product }: { product: Product }) {
               </div>
             </div>
             <p className="text-sm leading-relaxed text-ink/90">{review.body}</p>
-            <button className="mt-3 flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-xs text-dim transition-colors hover:border-aurora/40 hover:text-aurora">
+            <button className="mt-3 flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-xs text-dim transition-colors hover:border-accent/50 hover:text-accent">
               <ThumbsUp className="size-3" /> 有价值 ({review.helpful})
             </button>
           </article>

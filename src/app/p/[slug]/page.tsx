@@ -20,8 +20,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   return (
     <main className="mx-auto max-w-7xl px-4 pt-6 sm:px-6">
       {/* 面包屑 */}
-      <nav className="mb-4 flex items-center gap-1 text-xs text-mute animate-[fade-up_.5s_ease_both]">
-        <Link href="/" className="transition-colors hover:text-aurora">商店</Link>
+      <nav className="mb-4 flex items-center gap-1 text-xs text-mute">
+        <Link href="/" className="transition-colors hover:text-accent">商店</Link>
         <ChevronRight className="size-3" />
         <span>{typeMeta[product.type].label}</span>
         <ChevronRight className="size-3" />
@@ -29,7 +29,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       </nav>
 
       {/* 标题区 */}
-      <header className="mb-6 animate-[fade-up_.5s_ease_both]" style={{ animationDelay: "60ms" }}>
+      <header className="mb-6">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-3xl font-bold">{product.name}</h1>
           <TypeBadge type={product.type} />
@@ -39,14 +39,11 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
       <div className="grid gap-8 lg:grid-cols-[1fr_330px]">
         {/* 左主栏 */}
-        <div className="min-w-0 space-y-8 animate-[fade-up_.5s_ease_both]" style={{ animationDelay: "120ms" }}>
+        <div className="min-w-0 space-y-8">
           <MediaGallery art={product.art} />
 
           <section className="space-y-3">
-            <div className="flex items-baseline gap-3">
-              <h2 className="text-lg font-bold">关于此造物</h2>
-              <span className="font-display text-[10px] font-semibold tracking-[0.25em] text-mute">ABOUT</span>
-            </div>
+            <h2 className="text-lg font-bold">关于</h2>
             {product.description.map((para, i) => (
               <p key={i} className="text-sm leading-7 text-ink/85">{para}</p>
             ))}
@@ -56,14 +53,14 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         </div>
 
         {/* 右侧栏 */}
-        <aside className="space-y-4 animate-[fade-up_.5s_ease_both] lg:sticky lg:top-20 lg:self-start" style={{ animationDelay: "180ms" }}>
+        <aside className="space-y-4 lg:sticky lg:top-18 lg:self-start">
           <AcquireBox product={product} />
           <CapabilityList capabilities={product.capabilities} />
-          <div className="capsule p-5 hover:translate-y-0">
+          <div className="capsule p-5">
             <h3 className="mb-2.5 text-sm font-semibold">标签</h3>
             <div className="flex flex-wrap gap-1.5">
               {product.tags.map((tag) => (
-                <span key={tag} className="rounded bg-card-hi px-2 py-1 text-xs text-dim transition-colors hover:text-aurora">
+                <span key={tag} className="rounded bg-card-hi px-2 py-1 text-xs text-dim">
                   {tag}
                 </span>
               ))}

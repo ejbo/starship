@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight, Download } from "lucide-react";
+import { PriceTag } from "@/components/store/product-card";
 import { CapsuleArt } from "@/components/ui/capsule-art";
 import { Rating } from "@/components/ui/rating";
 import { TypeBadge } from "@/components/ui/type-badge";
@@ -32,14 +33,10 @@ export function HeroCarousel({ products }: { products: Product[] }) {
 
   return (
     <section
-      className="animate-[fade-up_.6s_ease_both]"
       onMouseEnter={() => (pausedRef.current = true)}
       onMouseLeave={() => (pausedRef.current = false)}
     >
-      <div className="mb-3 flex items-baseline gap-3">
-        <h2 className="text-lg font-bold">精选星图</h2>
-        <span className="font-display text-[10px] font-semibold tracking-[0.25em] text-mute">FEATURED</span>
-      </div>
+      <h2 className="mb-3 text-lg font-bold">精选与推荐</h2>
 
       <div className="capsule grid overflow-hidden md:grid-cols-[1.7fr_1fr]">
         {/* 大画面 */}
@@ -47,26 +44,26 @@ export function HeroCarousel({ products }: { products: Product[] }) {
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.div
               key={current.id}
-              initial={{ opacity: 0, scale: 1.04 }}
-              animate={{ opacity: 1, scale: 1 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.55, ease: "easeOut" }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
               className="absolute inset-0"
             >
-              <CapsuleArt art={current.art} ratio="banner" className="h-full w-full" iconClassName="max-h-28" />
+              <CapsuleArt art={current.art} ratio="banner" className="h-full w-full" iconClassName="max-h-24" />
             </motion.div>
           </AnimatePresence>
         </div>
 
         {/* 信息面板 */}
-        <div className="relative flex flex-col gap-3 border-t border-line bg-panel/60 p-5 md:border-t-0 md:border-l">
+        <div className="flex flex-col gap-3 border-t border-line p-5 md:border-t-0 md:border-l">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={current.id}
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
               className="flex grow flex-col gap-3"
             >
               <div className="flex items-center gap-2">
@@ -86,12 +83,13 @@ export function HeroCarousel({ products }: { products: Product[] }) {
               <div className="flex items-center gap-3">
                 <Link
                   href={`/p/${current.slug}`}
-                  className="group/cta inline-flex items-center gap-1.5 rounded-md bg-gradient-to-r from-aurora to-teal px-4 py-2 text-sm font-semibold text-abyss transition-shadow hover:shadow-[0_0_24px_-4px_rgb(83_216_255/.6)]"
+                  className="group/cta inline-flex items-center gap-1.5 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-deep"
                 >
-                  查看造物
+                  查看详情
                   <ArrowRight className="size-4 transition-transform group-hover/cta:translate-x-0.5" />
                 </Link>
-                <span className="flex items-center gap-1 text-xs text-mute">
+                <PriceTag price={current.price} className="text-sm" />
+                <span className="ml-auto flex items-center gap-1 text-xs text-mute">
                   <Download className="size-3.5" />
                   {current.acquisitions.toLocaleString("zh-CN")}
                 </span>
@@ -107,8 +105,8 @@ export function HeroCarousel({ products }: { products: Product[] }) {
                 aria-label={`切换到 ${p.name}`}
                 onClick={() => setIndex(i)}
                 className={cn(
-                  "h-1 rounded-full transition-all duration-300",
-                  i === index ? "w-7 bg-aurora" : "w-3 bg-line hover:bg-mute",
+                  "h-1.5 rounded-full transition-all duration-300",
+                  i === index ? "w-6 bg-accent" : "w-3 bg-line hover:bg-mute",
                 )}
               />
             ))}

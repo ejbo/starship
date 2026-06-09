@@ -24,7 +24,7 @@ export function getBySlug(slug: string): Product | undefined {
   return products.find((p) => p.slug === slug);
 }
 
-/** 发现队列：未入库且评分高的造物 */
+/** 发现队列：未入库且评分高的产品 */
 export function getDiscoveryQueue(): Product[] {
   const owned = new Set(currentUser.library.map((e) => e.slug));
   return products

@@ -11,8 +11,8 @@ export function ratingVerdict(score: number): { label: string; tone: "good" | "m
 }
 
 const toneClass = {
-  good: "text-aurora",
-  mixed: "text-gold",
+  good: "text-good",
+  mixed: "text-warn",
   bad: "text-danger",
 } as const;
 
@@ -27,15 +27,15 @@ export function Rating({ score, count, showVerdict = true, className }: RatingPr
   const verdict = ratingVerdict(score);
   return (
     <div className={cn("flex items-center gap-1.5 text-sm", className)}>
-      <span className="flex items-center gap-0.5 text-gold">
+      <span className="flex items-center gap-0.5 text-star">
         {Array.from({ length: 5 }, (_, i) => (
           <Star
             key={i}
-            className={cn("size-3.5", i < Math.round(score) ? "fill-gold" : "fill-transparent opacity-30")}
+            className={cn("size-3.5", i < Math.round(score) ? "fill-star" : "fill-transparent opacity-35")}
           />
         ))}
       </span>
-      <span className="font-display font-semibold text-ink">{score.toFixed(1)}</span>
+      <span className="font-semibold text-ink">{score.toFixed(1)}</span>
       {showVerdict && <span className={cn("font-medium", toneClass[verdict.tone])}>{verdict.label}</span>}
       {count !== undefined && (
         <span className="text-mute">({count.toLocaleString("zh-CN")} 篇评测)</span>

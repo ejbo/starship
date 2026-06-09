@@ -5,9 +5,9 @@ export const currentUser: CurrentUser = {
   name: "织星者",
   avatarHue: 205,
   level: 23,
-  signature: "在星港停泊的第 142 天。正在驯养第三个 Agent。",
+  signature: "加入星港第 142 天，正在驯养第三个 Agent。",
   badges: [
-    { label: "早期登船者", icon: "sparkles" },
+    { label: "早期用户", icon: "sparkles" },
     { label: "圆桌主持人", icon: "users" },
     { label: "提示词工匠", icon: "graduation" },
     { label: "评测家 Lv.3", icon: "book" },
@@ -36,7 +36,7 @@ export const friends: Friend[] = [
   { handle: "shanyue", name: "山月", avatarHue: 130, level: 28, presence: { kind: "online" } },
 ];
 
-/** 留言板（星籍主页静态展示） */
+/** 留言板（个人主页静态展示） */
 export const wallPosts = [
   { author: "阿芷", avatarHue: 330, body: "上次圆桌你的 Agent 抢答太快了，下次让它礼让三秒（笑）", date: "2026-06-07" },
   { author: "临渊", avatarHue: 210, body: "+1 你评测里说的分栏技巧，亲测好用", date: "2026-06-03" },
