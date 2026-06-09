@@ -29,6 +29,9 @@ pnpm dev          # http://localhost:3000
 | `/community` | 动态 Feed + 进行中的圆桌 |
 | `/settings/gateway` | API 配置中心：增删密钥（AES-GCM 加密）、日限额、Provider 覆盖状态 |
 | `/settings/usage` | 用量看板：按应用/Provider/日拆解 token 与成本 |
+| `/login` `/register` | 账号登录/注册（iron-session）|
+
+**演示账号**：`me` / `starport123`（或任意好友 handle 如 `linyuan` / `friend123`）。商店与详情页可匿名浏览；获取/评测/库/个人主页/设置需登录。
 
 ## 文档
 

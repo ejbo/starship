@@ -13,12 +13,10 @@ const navLinks = [
 ] as const;
 
 interface GlobalNavProps {
-  userName: string;
-  userHue: number;
-  tokenBalance: string;
+  user: { name: string; avatarHue: number; tokenBalance: string } | null;
 }
 
-export function GlobalNav({ userName, userHue, tokenBalance }: GlobalNavProps) {
+export function GlobalNav({ user }: GlobalNavProps) {
   const pathname = usePathname();
 
   const isActive = (href: string) =>
@@ -69,31 +67,42 @@ export function GlobalNav({ userName, userHue, tokenBalance }: GlobalNavProps) {
             />
           </label>
 
-          {/* 用量额度 → 用量看板 */}
-          <Link
-            href="/settings/usage"
-            className="hidden items-center gap-1 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-dim transition-colors hover:border-accent/50 hover:text-ink sm:flex"
-            title="查看用量看板"
-          >
-            <Zap className="size-3.5 text-warn" />
-            {tokenBalance} tokens
-          </Link>
+          {user ? (
+            <>
+              {/* 用量额度 → 用量看板 */}
+              <Link
+                href="/settings/usage"
+                className="hidden items-center gap-1 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-dim transition-colors hover:border-accent/50 hover:text-ink sm:flex"
+                title="查看用量看板"
+              >
+                <Zap className="size-3.5 text-warn" />
+                {user.tokenBalance} tokens
+              </Link>
 
-          {/* 配置中心 */}
-          <Link
-            href="/settings/gateway"
-            className={cn(
-              "rounded-md p-2 transition-colors",
-              pathname.startsWith("/settings") ? "bg-accent/8 text-accent" : "text-dim hover:bg-card-hi hover:text-ink",
-            )}
-            title="API 配置中心"
-          >
-            <Settings className="size-4.5" />
-          </Link>
+              {/* 配置中心 */}
+              <Link
+                href="/settings/gateway"
+                className={cn(
+                  "rounded-md p-2 transition-colors",
+                  pathname.startsWith("/settings") ? "bg-accent/8 text-accent" : "text-dim hover:bg-card-hi hover:text-ink",
+                )}
+                title="API 配置中心"
+              >
+                <Settings className="size-4.5" />
+              </Link>
 
-          <Link href="/u/me" className="transition-opacity hover:opacity-80">
-            <Avatar name={userName} hue={userHue} size="md" />
-          </Link>
+              <Link href="/u/me" className="transition-opacity hover:opacity-80">
+                <Avatar name={user.name} hue={user.avatarHue} size="md" />
+              </Link>
+            </>
+          ) : (
+            <Link
+              href="/login"
+              className="rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-accent-deep"
+            >
+              登录
+            </Link>
+          )}
         </div>
       </div>
     </header>

@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Clock, Play } from "lucide-react";
 import { CapsuleArt } from "@/components/ui/capsule-art";
 import { typeMeta } from "@/components/ui/type-badge";
 import { getLibrary, type LibraryItem } from "@/lib/catalog";
+import { getSessionUserIdOrNull } from "@/lib/session";
 import type { ProductType } from "@/lib/types";
 
 /** 应用跳沙箱启动页，其余类型回详情页 */
@@ -53,6 +55,7 @@ function ShelfCard({ item }: { item: LibraryItem }) {
 export const dynamic = "force-dynamic";
 
 export default async function LibraryPage() {
+  if (!(await getSessionUserIdOrNull())) redirect("/login");
   const library = await getLibrary();
   const recent = library.slice(0, 3);
 

@@ -19,6 +19,8 @@ model User {
   id           String          @id @default(cuid())
   handle       String          @unique
   name         String
+  /// salt:hash（scrypt）；种子好友可为空表示不可登录
+  passwordHash String?
   avatarHue    Int
   level        Int
   signature    String          @default("")

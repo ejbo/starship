@@ -1,17 +1,52 @@
 import "server-only";
+import { getIronSession, type SessionOptions } from "iron-session";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 
-/**
- * 当前会话用户。Phase 1b 占位：固定返回种子用户 me。
- * Phase 1b-auth 将替换为 iron-session 读取真实登录态。
- */
-export async function getSessionUserId(): Promise<string> {
-  const me = await prisma.user.findUniqueOrThrow({ where: { handle: "me" }, select: { id: true } });
-  return me.id;
+interface SessionData {
+  userId?: string;
 }
 
-/** 未登录返回 null。Phase 1c 占位：始终返回种子用户。Phase 1d-auth 替换为真实登录态。 */
+const sessionOptions: SessionOptions = {
+  password: process.env.IRON_SESSION_PASSWORD!,
+  cookieName: "starport_session",
+  cookieOptions: {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 60 * 24 * 30,
+  },
+};
+
+export async function getSession() {
+  const cookieStore = await cookies();
+  return getIronSession<SessionData>(cookieStore, sessionOptions);
+}
+
+export async function setSessionUser(userId: string) {
+  const session = await getSession();
+  session.userId = userId;
+  await session.save();
+}
+
+export async function clearSession() {
+  const session = await getSession();
+  session.destroy();
+}
+
+/** 未登录返回 null */
 export async function getSessionUserIdOrNull(): Promise<string | null> {
-  const me = await prisma.user.findUnique({ where: { handle: "me" }, select: { id: true } });
-  return me?.id ?? null;
+  const session = await getSession();
+  if (!session.userId) return null;
+  // 校验用户仍存在
+  const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { id: true } });
+  return user?.id ?? null;
+}
+
+/** 需登录页面/动作调用：未登录跳转 /login */
+export async function getSessionUserId(): Promise<string> {
+  const userId = await getSessionUserIdOrNull();
+  if (!userId) redirect("/login");
+  return userId;
 }

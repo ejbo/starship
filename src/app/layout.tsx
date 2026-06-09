@@ -17,10 +17,12 @@ export default async function RootLayout({
   return (
     <html lang="zh-CN">
       <body className="antialiased">
-        <GlobalNav userName={user.name} userHue={user.avatarHue} tokenBalance={user.tokenBalance} />
+        <GlobalNav
+          user={user ? { name: user.name, avatarHue: user.avatarHue, tokenBalance: user.tokenBalance } : null}
+        />
         <div className="min-h-[70vh]">{children}</div>
         <SiteFooter />
-        <FriendsDock friends={getFriends()} />
+        {user && <FriendsDock friends={getFriends()} />}
       </body>
     </html>
   );

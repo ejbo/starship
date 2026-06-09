@@ -6,12 +6,18 @@ import { config as dotenv } from "dotenv";
 dotenv({ path: ".env.local", override: false });
 dotenv({ path: ".env", override: false });
 
-import { createCipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, randomBytes, scryptSync } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { products } from "../src/lib/mock/products";
 import { activity } from "../src/lib/mock/activity";
 import { currentUser, friends } from "../src/lib/mock/users";
+
+/** 与 src/lib/password.ts 同算法 */
+function hashPassword(password: string): string {
+  const salt = randomBytes(16);
+  return `${salt.toString("hex")}:${scryptSync(password, salt, 64).toString("hex")}`;
+}
 
 /** 与 src/lib/crypto.ts 同算法（种子脚本独立运行，避免 server-only 导入） */
 function encryptSecret(plaintext: string): string {
@@ -83,6 +89,7 @@ async function main() {
     data: {
       handle: currentUser.handle,
       name: currentUser.name,
+      passwordHash: hashPassword("starport123"),
       avatarHue: currentUser.avatarHue,
       level: currentUser.level,
       signature: currentUser.signature,
@@ -97,6 +104,8 @@ async function main() {
       data: {
         handle: f.handle,
         name: f.name,
+        // 好友演示账号统一口令（可用任意好友 handle / friend123 登录体验另一视角）
+        passwordHash: hashPassword("friend123"),
         avatarHue: f.avatarHue,
         level: f.level,
       },

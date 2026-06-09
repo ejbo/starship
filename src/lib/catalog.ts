@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getSessionUserIdOrNull } from "@/lib/session";
 import { activity as mockActivity, liveRoundtables } from "@/lib/mock/activity";
 import { friends as mockFriends, wallPosts } from "@/lib/mock/users";
 import type {
@@ -113,8 +114,10 @@ export interface LibraryItem {
   usageHours: number;
 }
 
-function getMeRecord() {
-  return prisma.user.findUnique({ where: { handle: "me" } });
+async function getMeRecord() {
+  const userId = await getSessionUserIdOrNull();
+  if (!userId) return null;
+  return prisma.user.findUnique({ where: { id: userId } });
 }
 
 export async function getLibrary(): Promise<LibraryItem[]> {
@@ -145,11 +148,15 @@ export interface CurrentUserView {
   library: { slug: string; acquiredAt: string; lastUsedAt?: string; usageHours: number }[];
 }
 
-export async function getCurrentUser(): Promise<CurrentUserView> {
-  const me = await prisma.user.findUniqueOrThrow({
-    where: { handle: "me" },
+/** 未登录返回 null */
+export async function getCurrentUser(): Promise<CurrentUserView | null> {
+  const userId = await getSessionUserIdOrNull();
+  if (!userId) return null;
+  const me = await prisma.user.findUnique({
+    where: { id: userId },
     include: { library: { include: { product: { select: { slug: true } } } } },
   });
+  if (!me) return null;
   return {
     handle: me.handle,
     name: me.name,

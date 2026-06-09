@@ -1,10 +1,11 @@
-import { notFound } from "next/navigation";
-import { Clock, LayoutGrid, MessageSquare, Star } from "lucide-react";
+import { notFound, redirect } from "next/navigation";
+import { Clock, LayoutGrid, LogOut, MessageSquare, Star } from "lucide-react";
 import { FriendList } from "@/components/profile/friend-list";
 import { Showcase } from "@/components/profile/showcase";
 import { Avatar } from "@/components/ui/avatar";
 import { getProductIcon } from "@/lib/icons";
 import { getBySlug, getCurrentUser, getFriends, getWallPosts } from "@/lib/catalog";
+import { logoutAction } from "@/app/(auth)/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
   if (handle !== "me") notFound();
 
   const user = await getCurrentUser();
+  if (!user) redirect("/login");
   const friends = getFriends();
   const wallPosts = getWallPosts();
   const showcaseProducts = await Promise.all(user.showcase.map((slug) => getBySlug(slug)));
@@ -43,7 +45,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
           </h1>
           <p className="mt-1 text-sm text-dim">{user.signature}</p>
         </div>
-        <div className="ml-auto flex flex-wrap gap-2 pb-1">
+        <div className="ml-auto flex flex-wrap items-center gap-2 pb-1">
           {user.badges.map((badge) => {
             const Icon = getProductIcon(badge.icon);
             return (
@@ -52,6 +54,14 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
               </span>
             );
           })}
+          <form action={logoutAction}>
+            <button
+              type="submit"
+              className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-2.5 py-1.5 text-xs text-dim transition-colors hover:border-danger/40 hover:text-danger"
+            >
+              <LogOut className="size-3.5" /> 登出
+            </button>
+          </form>
         </div>
       </header>
 
