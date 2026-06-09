@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+@theme {
+  --color-abyss: #0a0e1a;
+  --color-ink: #dbe4ff;
+}
+
+body {
+  background: var(--color-abyss);
+  color: var(--color-ink);
+}
