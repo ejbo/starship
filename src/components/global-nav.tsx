@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Search, Zap } from "lucide-react";
+import { Search, Settings, Zap } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/cn";
 
@@ -69,11 +69,27 @@ export function GlobalNav({ userName, userHue, tokenBalance }: GlobalNavProps) {
             />
           </label>
 
-          {/* 用量额度 */}
-          <span className="hidden items-center gap-1 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-dim sm:flex" title="本月可用模型额度">
+          {/* 用量额度 → 用量看板 */}
+          <Link
+            href="/settings/usage"
+            className="hidden items-center gap-1 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-dim transition-colors hover:border-accent/50 hover:text-ink sm:flex"
+            title="查看用量看板"
+          >
             <Zap className="size-3.5 text-warn" />
             {tokenBalance} tokens
-          </span>
+          </Link>
+
+          {/* 配置中心 */}
+          <Link
+            href="/settings/gateway"
+            className={cn(
+              "rounded-md p-2 transition-colors",
+              pathname.startsWith("/settings") ? "bg-accent/8 text-accent" : "text-dim hover:bg-card-hi hover:text-ink",
+            )}
+            title="API 配置中心"
+          >
+            <Settings className="size-4.5" />
+          </Link>
 
           <Link href="/u/me" className="transition-opacity hover:opacity-80">
             <Avatar name={userName} hue={userHue} size="md" />

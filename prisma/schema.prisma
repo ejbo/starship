@@ -16,20 +16,22 @@ enum ProductType {
 }
 
 model User {
-  id           String         @id @default(cuid())
-  handle       String         @unique
+  id           String          @id @default(cuid())
+  handle       String          @unique
   name         String
   avatarHue    Int
   level        Int
-  signature    String         @default("")
-  tokenBalance String         @default("0")
+  signature    String          @default("")
+  tokenBalance String          @default("0")
   /// [{ label, icon }]
-  badges       Json           @default("[]")
+  badges       Json            @default("[]")
   /// 展柜精选的产品 slug
-  showcase     String[]       @default([])
+  showcase     String[]        @default([])
   library      LibraryEntry[]
-  friendsOut   FriendEdge[]   @relation("FriendA")
-  friendsIn    FriendEdge[]   @relation("FriendB")
+  friendsOut   FriendEdge[]    @relation("FriendA")
+  friendsIn    FriendEdge[]    @relation("FriendB")
+  credentials  ApiCredential[]
+  usage        UsageRecord[]
 }
 
 model FriendEdge {
@@ -102,6 +104,41 @@ model LibraryEntry {
   product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([userId, productId])
+}
+
+model ApiCredential {
+  id              String  @id @default(cuid())
+  userId          String
+  /// anthropic | openai | google | xai | openrouter
+  provider        String
+  label           String
+  /// AES-256-GCM 信封密文（base64(iv).base64(tag).base64(cipher)）
+  ciphertext      String
+  /// 展示用末 4 位
+  last4           String
+  /// 每日 token 上限；null = 不限
+  dailyTokenLimit Int?
+  createdAt       String
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, label])
+}
+
+model UsageRecord {
+  id          String @id @default(cuid())
+  userId      String
+  /// 消耗发生在哪个应用
+  productSlug String
+  provider    String
+  model       String
+  tokensIn    Int
+  tokensOut   Int
+  costCents   Int
+  /// YYYY-MM-DD
+  day         String
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, day])
 }
 
 model ActivityEvent {

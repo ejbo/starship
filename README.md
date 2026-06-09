@@ -27,6 +27,8 @@ pnpm dev          # http://localhost:3000
 | `/library` | 库：最近使用 + 全部，应用可启动 |
 | `/u/me` | 个人主页：展柜、徽章、统计、留言板 |
 | `/community` | 动态 Feed + 进行中的圆桌 |
+| `/settings/gateway` | API 配置中心：增删密钥（AES-GCM 加密）、日限额、Provider 覆盖状态 |
+| `/settings/usage` | 用量看板：按应用/Provider/日拆解 token 与成本 |
 
 ## 文档
 
