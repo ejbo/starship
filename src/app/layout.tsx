@@ -10,10 +10,10 @@ export const metadata: Metadata = {
   description: "一站式 AI 应用、模型与 Agent 平台",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   return (
     <html lang="zh-CN">
       <body className="antialiased">

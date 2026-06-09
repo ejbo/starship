@@ -8,13 +8,13 @@ import { ReviewSection } from "@/components/product/review-section";
 import { TypeBadge, typeMeta } from "@/components/ui/type-badge";
 import { getAllProducts, getBySlug } from "@/lib/catalog";
 
-export function generateStaticParams() {
-  return getAllProducts().map((p) => ({ slug: p.slug }));
+export async function generateStaticParams() {
+  return (await getAllProducts()).map((p) => ({ slug: p.slug }));
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const product = getBySlug(slug);
+  const product = await getBySlug(slug);
   if (!product) notFound();
 
   return (

@@ -4,8 +4,8 @@ import { ChevronLeft, Globe, ShieldCheck } from "lucide-react";
 import { CapsuleArt } from "@/components/ui/capsule-art";
 import { describeCapability, getAllProducts, getBySlug } from "@/lib/catalog";
 
-export function generateStaticParams() {
-  return getAllProducts()
+export async function generateStaticParams() {
+  return (await getAllProducts())
     .filter((p) => p.entry)
     .map((p) => ({ slug: p.slug }));
 }
@@ -16,7 +16,7 @@ export function generateStaticParams() {
  */
 export default async function RunPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const product = getBySlug(slug);
+  const product = await getBySlug(slug);
   if (!product || !product.entry) notFound();
 
   return (

@@ -1,35 +1,109 @@
-import { products } from "@/lib/mock/products";
-import { activity, liveRoundtables } from "@/lib/mock/activity";
-import { currentUser, friends, wallPosts } from "@/lib/mock/users";
-import type { ActivityEvent, Friend, Product, ProductType } from "@/lib/types";
+import { prisma } from "@/lib/db";
+import { activity as mockActivity, liveRoundtables } from "@/lib/mock/activity";
+import { friends as mockFriends, wallPosts } from "@/lib/mock/users";
+import type {
+  ActivityEvent,
+  Friend,
+  Product,
+  ProductType,
+  Review,
+} from "@/lib/types";
+import type {
+  ActivityEvent as DbActivityEvent,
+  Product as DbProduct,
+  Review as DbReview,
+} from "@prisma/client";
 
 /**
  * 目录门面：页面只从这里取数。
- * Phase 1 把内部实现换成 Prisma 查询，页面零改动。
+ * Phase 1a 起内部实现为 Prisma 查询；presence/留言板/圆桌仍为 mock（属 Phase 2/5）。
  */
 
-export function getAllProducts(): Product[] {
-  return products;
+type DbProductWithReviews = DbProduct & { reviews: DbReview[] };
+
+function toReview(r: DbReview): Review {
+  return {
+    author: r.authorName,
+    avatarHue: r.avatarHue,
+    isAgent: r.isAgent,
+    score: r.score as Review["score"],
+    usageHours: r.usageHours,
+    helpful: r.helpful,
+    body: r.body,
+    date: r.date,
+  };
 }
 
-export function getFeatured(): Product[] {
-  return products.filter((p) => p.featured);
+function toProduct(p: DbProductWithReviews): Product {
+  return {
+    id: p.id,
+    slug: p.slug,
+    type: p.type as ProductType,
+    name: p.name,
+    tagline: p.tagline,
+    description: p.description,
+    art: { hueA: p.hueA, hueB: p.hueB, icon: p.icon },
+    tags: p.tags,
+    rating: { score: p.ratingScore, count: p.ratingCount, histogram: p.histogram },
+    acquisitions: p.acquisitions,
+    developer: p.developer,
+    version: p.version ?? undefined,
+    entry: p.entryUrl ? { kind: "sandbox", url: p.entryUrl } : undefined,
+    price: p.priceCredits == null ? "free" : { credits: p.priceCredits },
+    capabilities: p.capabilities,
+    releasedAt: p.releasedAt,
+    updatedAt: p.updatedAt,
+    featured: p.featured,
+    reviews: p.reviews.map(toReview),
+  };
 }
 
-export function getByType(type: ProductType): Product[] {
-  return products.filter((p) => p.type === type);
+const withReviews = {
+  reviews: { orderBy: { helpful: "desc" } as const },
+};
+
+export async function getAllProducts(): Promise<Product[]> {
+  const rows = await prisma.product.findMany({ include: withReviews, orderBy: { acquisitions: "desc" } });
+  return rows.map(toProduct);
 }
 
-export function getBySlug(slug: string): Product | undefined {
-  return products.find((p) => p.slug === slug);
+export async function getFeatured(): Promise<Product[]> {
+  const rows = await prisma.product.findMany({
+    where: { featured: true },
+    include: withReviews,
+    orderBy: { acquisitions: "desc" },
+  });
+  return rows.map(toProduct);
+}
+
+export async function getByType(type: ProductType): Promise<Product[]> {
+  const rows = await prisma.product.findMany({
+    where: { type },
+    include: withReviews,
+    orderBy: { acquisitions: "desc" },
+  });
+  return rows.map(toProduct);
+}
+
+export async function getBySlug(slug: string): Promise<Product | undefined> {
+  const row = await prisma.product.findUnique({ where: { slug }, include: withReviews });
+  return row ? toProduct(row) : undefined;
 }
 
 /** 发现队列：未入库且评分高的产品 */
-export function getDiscoveryQueue(): Product[] {
-  const owned = new Set(currentUser.library.map((e) => e.slug));
-  return products
-    .filter((p) => !owned.has(p.slug))
-    .sort((a, b) => b.rating.score - a.rating.score);
+export async function getDiscoveryQueue(): Promise<Product[]> {
+  const me = await getMeRecord();
+  const ownedIds = me
+    ? (await prisma.libraryEntry.findMany({ where: { userId: me.id }, select: { productId: true } })).map(
+        (e) => e.productId,
+      )
+    : [];
+  const rows = await prisma.product.findMany({
+    where: { id: { notIn: ownedIds } },
+    include: withReviews,
+    orderBy: { ratingScore: "desc" },
+  });
+  return rows.map(toProduct);
 }
 
 export interface LibraryItem {
@@ -39,26 +113,82 @@ export interface LibraryItem {
   usageHours: number;
 }
 
-export function getLibrary(): LibraryItem[] {
-  return currentUser.library
-    .map((entry) => {
-      const product = getBySlug(entry.slug);
-      return product ? { product, ...entry } : null;
-    })
-    .filter((item): item is LibraryItem & { slug: string } => item !== null)
-    .sort((a, b) => (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? ""));
+function getMeRecord() {
+  return prisma.user.findUnique({ where: { handle: "me" } });
 }
 
-export function getCurrentUser() {
-  return currentUser;
+export async function getLibrary(): Promise<LibraryItem[]> {
+  const me = await getMeRecord();
+  if (!me) return [];
+  const entries = await prisma.libraryEntry.findMany({
+    where: { userId: me.id },
+    include: { product: { include: withReviews } },
+    orderBy: { lastUsedAt: "desc" },
+  });
+  return entries.map((e) => ({
+    product: toProduct(e.product),
+    acquiredAt: e.acquiredAt,
+    lastUsedAt: e.lastUsedAt ?? undefined,
+    usageHours: e.usageHours,
+  }));
 }
 
+export interface CurrentUserView {
+  handle: string;
+  name: string;
+  avatarHue: number;
+  level: number;
+  signature: string;
+  badges: { label: string; icon: string }[];
+  showcase: string[];
+  tokenBalance: string;
+  library: { slug: string; acquiredAt: string; lastUsedAt?: string; usageHours: number }[];
+}
+
+export async function getCurrentUser(): Promise<CurrentUserView> {
+  const me = await prisma.user.findUniqueOrThrow({
+    where: { handle: "me" },
+    include: { library: { include: { product: { select: { slug: true } } } } },
+  });
+  return {
+    handle: me.handle,
+    name: me.name,
+    avatarHue: me.avatarHue,
+    level: me.level,
+    signature: me.signature,
+    badges: (me.badges as { label: string; icon: string }[]) ?? [],
+    showcase: me.showcase,
+    tokenBalance: me.tokenBalance,
+    library: me.library
+      .map((e) => ({
+        slug: e.product.slug,
+        acquiredAt: e.acquiredAt,
+        lastUsedAt: e.lastUsedAt ?? undefined,
+        usageHours: e.usageHours,
+      }))
+      .sort((a, b) => (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? "")),
+  };
+}
+
+/** 好友的在线状态/聊天属 Phase 2，仍取 mock；昵称/色相已与种子一致 */
 export function getFriends(): Friend[] {
-  return friends;
+  return mockFriends;
 }
 
-export function getFeed(): ActivityEvent[] {
-  return activity;
+export async function getFeed(): Promise<ActivityEvent[]> {
+  const rows = await prisma.activityEvent.findMany({ orderBy: { sort: "asc" } });
+  return rows.map(toActivity);
+}
+
+function toActivity(e: DbActivityEvent): ActivityEvent {
+  return {
+    id: e.id,
+    actor: { name: e.actorName, avatarHue: e.actorHue, isAgent: e.actorIsAgent },
+    verb: e.verb as ActivityEvent["verb"],
+    productSlug: e.productSlug ?? undefined,
+    detail: e.detail ?? undefined,
+    at: e.at,
+  };
 }
 
 export function getWallPosts() {
@@ -69,7 +199,10 @@ export function getLiveRoundtables() {
   return liveRoundtables;
 }
 
-/** 运行环境声明 → 人话 */
+// mockActivity 仅作类型完整性参考，避免误删 mock 文件依赖
+void mockActivity;
+
+/** 运行要求声明 → 人话 */
 export function describeCapability(cap: string): { name: string; note: string } {
   const [kind, value] = cap.split(":");
   switch (kind) {
@@ -80,7 +213,7 @@ export function describeCapability(cap: string): { name: string; note: string } 
     case "gateway":
       return value === "usage-read"
         ? { name: "用量数据（只读）", note: "读取你的 Gateway 用量记录" }
-        : { name: `${providerName(value)} 接入`, note: "经星港 Gateway 代理调用" };
+        : { name: `${providerName(value)} 接入`, note: "经平台 Gateway 代理调用" };
     case "storage":
       return { name: `云存储 ${value.toUpperCase()}`, note: "应用专属的隔离存储空间" };
     case "social":

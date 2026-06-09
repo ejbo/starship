@@ -14,16 +14,17 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
   const { handle } = await params;
   if (handle !== "me") notFound();
 
-  const user = getCurrentUser();
+  const user = await getCurrentUser();
   const friends = getFriends();
   const wallPosts = getWallPosts();
-  const showcase = user.showcase
-    .map((slug) => getBySlug(slug))
-    .filter((p): p is NonNullable<typeof p> => Boolean(p));
+  const showcaseProducts = await Promise.all(user.showcase.map((slug) => getBySlug(slug)));
+  const showcase = showcaseProducts.filter((p): p is NonNullable<typeof p> => Boolean(p));
   const totalHours = user.library.reduce((sum, e) => sum + e.usageHours, 0);
-  const recentlyUsed = [...user.library]
+  const recentEntries = [...user.library]
     .sort((a, b) => (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? ""))
     .slice(0, 3);
+  const recentProducts = await Promise.all(recentEntries.map((e) => getBySlug(e.slug)));
+  const recentlyUsed = recentEntries.map((entry, i) => ({ entry, name: recentProducts[i]?.name }));
 
   return (
     <main className="mx-auto max-w-7xl px-4 sm:px-6">
@@ -81,14 +82,13 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
           <div className="capsule p-5">
             <h3 className="mb-3 text-sm font-semibold">最近动态</h3>
             <ul className="space-y-2.5">
-              {recentlyUsed.map((entry) => {
-                const product = getBySlug(entry.slug);
-                if (!product) return null;
+              {recentlyUsed.map(({ entry, name }) => {
+                if (!name) return null;
                 return (
                   <li key={entry.slug} className="flex items-center gap-2 text-sm text-dim">
                     <span className="size-1.5 rounded-full bg-accent/60" />
                     {entry.lastUsedAt} 使用了
-                    <span className="font-medium text-ink">{product.name}</span>
+                    <span className="font-medium text-ink">{name}</span>
                     <span className="ml-auto text-xs text-mute">{entry.usageHours}h</span>
                   </li>
                 );

@@ -50,8 +50,8 @@ function ShelfCard({ item }: { item: LibraryItem }) {
   );
 }
 
-export default function LibraryPage() {
-  const library = getLibrary();
+export default async function LibraryPage() {
+  const library = await getLibrary();
   const recent = library.slice(0, 3);
 
   const typeCounts = library.reduce<Map<ProductType, number>>((acc, item) => {

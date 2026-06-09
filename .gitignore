@@ -13,3 +13,6 @@ next-env.d.ts
 
 # typescript
 *.tsbuildinfo
+
+# local postgres instance
+/.pgdata

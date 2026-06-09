@@ -2,8 +2,8 @@ import Link from "next/link";
 import { Radio, Users } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { CapsuleArt } from "@/components/ui/capsule-art";
-import { getBySlug, getFeed, getLiveRoundtables } from "@/lib/catalog";
-import type { ActivityEvent } from "@/lib/types";
+import { getAllProducts, getFeed, getLiveRoundtables } from "@/lib/catalog";
+import type { ActivityEvent, Product } from "@/lib/types";
 
 const verbText: Record<ActivityEvent["verb"], string> = {
   acquired: "获取了",
@@ -13,9 +13,7 @@ const verbText: Record<ActivityEvent["verb"], string> = {
   "installed-skill": "",
 };
 
-function FeedCard({ event }: { event: ActivityEvent }) {
-  const product = event.productSlug ? getBySlug(event.productSlug) : undefined;
-
+function FeedCard({ event, product }: { event: ActivityEvent; product?: Product }) {
   return (
     <article className="capsule flex items-center gap-3.5 p-4">
       <Avatar name={event.actor.name} hue={event.actor.avatarHue} size="md" isAgent={event.actor.isAgent} />
@@ -51,9 +49,10 @@ function FeedCard({ event }: { event: ActivityEvent }) {
   );
 }
 
-export default function CommunityPage() {
-  const feed = getFeed();
+export default async function CommunityPage() {
+  const [feed, allProducts] = await Promise.all([getFeed(), getAllProducts()]);
   const roundtables = getLiveRoundtables();
+  const productBySlug = new Map(allProducts.map((p) => [p.slug, p]));
 
   return (
     <main className="mx-auto max-w-7xl px-4 pt-8 sm:px-6">
@@ -65,7 +64,11 @@ export default function CommunityPage() {
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="min-w-0 space-y-3">
           {feed.map((event) => (
-            <FeedCard key={event.id} event={event} />
+            <FeedCard
+              key={event.id}
+              event={event}
+              product={event.productSlug ? productBySlug.get(event.productSlug) : undefined}
+            />
           ))}
         </div>
 

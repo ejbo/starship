@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ProductType {
+  app
+  model
+  agent
+  skill
+  tutorial
+  video
+}
+
+model User {
+  id           String         @id @default(cuid())
+  handle       String         @unique
+  name         String
+  avatarHue    Int
+  level        Int
+  signature    String         @default("")
+  tokenBalance String         @default("0")
+  /// [{ label, icon }]
+  badges       Json           @default("[]")
+  /// 展柜精选的产品 slug
+  showcase     String[]       @default([])
+  library      LibraryEntry[]
+  friendsOut   FriendEdge[]   @relation("FriendA")
+  friendsIn    FriendEdge[]   @relation("FriendB")
+}
+
+model FriendEdge {
+  id     String @id @default(cuid())
+  aId    String
+  bId    String
+  status String @default("accepted")
+  a      User   @relation("FriendA", fields: [aId], references: [id], onDelete: Cascade)
+  b      User   @relation("FriendB", fields: [bId], references: [id], onDelete: Cascade)
+
+  @@unique([aId, bId])
+}
+
+model Product {
+  id           String         @id
+  slug         String         @unique
+  type         ProductType
+  name         String
+  tagline      String
+  /// 段落数组
+  description  String[]
+  hueA         Int
+  hueB         Int
+  icon         String
+  tags         String[]
+  ratingScore  Float
+  ratingCount  Int
+  /// 近 10 期好评率（0-100）
+  histogram    Int[]
+  acquisitions Int
+  developer    String
+  version      String?
+  /// 应用入口（沙箱加载的外部部署地址）
+  entryUrl     String?
+  /// null = 免费
+  priceCredits Int?
+  capabilities String[]
+  releasedAt   String
+  updatedAt    String
+  featured     Boolean        @default(false)
+  reviews      Review[]
+  inLibraries  LibraryEntry[]
+}
+
+model Review {
+  id         String  @id @default(cuid())
+  productId  String
+  /// 评测者去规范化（部分评测者非平台注册用户，如 Agent）
+  authorName String
+  avatarHue  Int
+  isAgent    Boolean @default(false)
+  score      Int
+  usageHours Int
+  helpful    Int     @default(0)
+  body       String
+  date       String
+  product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+model LibraryEntry {
+  id         String  @id @default(cuid())
+  userId     String
+  productId  String
+  acquiredAt String
+  lastUsedAt String?
+  usageHours Int     @default(0)
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+}
+
+model ActivityEvent {
+  id           String  @id @default(cuid())
+  actorName    String
+  actorHue     Int
+  actorIsAgent Boolean @default(false)
+  verb         String
+  productSlug  String?
+  detail       String?
+  /// Phase 1a 保留展示字符串（"12 分钟前"），Phase 1b 迁 DateTime
+  at           String
+  sort         Int
+}
