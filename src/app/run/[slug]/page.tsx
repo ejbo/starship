@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ChevronLeft, Globe, ShieldCheck } from "lucide-react";
 import { CapsuleArt } from "@/components/ui/capsule-art";
 import { describeCapability, getBySlug } from "@/lib/catalog";
+import { setActivity } from "@/lib/friends-service";
+import { getSessionUserIdOrNull } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +14,12 @@ export const dynamic = "force-dynamic";
  */
 export default async function RunPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
+  if (!(await getSessionUserIdOrNull())) redirect("/login");
   const product = await getBySlug(slug);
   if (!product || !product.entry) notFound();
+
+  // 上报"正在使用 X"，反哺好友在线状态
+  await setActivity(product.name);
 
   return (
     <main className="mx-auto max-w-7xl px-4 pt-6 sm:px-6">

@@ -99,6 +99,7 @@ async function main() {
     },
   });
 
+  const friendByHandle = new Map<string, string>();
   for (const f of friends) {
     const friend = await prisma.user.create({
       data: {
@@ -108,9 +109,37 @@ async function main() {
         passwordHash: hashPassword("friend123"),
         avatarHue: f.avatarHue,
         level: f.level,
+        // 种子展示状态（好友未真实登录时由 friends-service 兜底使用）
+        presenceKind: f.presence.kind,
+        presenceDetail: f.presence.detail ?? null,
       },
     });
-    await prisma.friendEdge.create({ data: { aId: me.id, bId: friend.id } });
+    friendByHandle.set(f.handle, friend.id);
+    await prisma.friendEdge.create({ data: { aId: me.id, bId: friend.id, status: "accepted" } });
+  }
+
+  // 历史聊天记录（me 与各好友），at 用相对当下的偏移 ISO
+  const now = Date.now();
+  const iso = (minsAgo: number) => new Date(now - minsAgo * 60_000).toISOString();
+  const chatSeed: Array<[string, Array<["me" | "friend", string, number]>]> = [
+    ["linyuan", [["friend", "你上次说的那个对比技巧，怎么设置来着？", 1440], ["me", "新建会话选「双栏」，左边固定 Claude", 1435], ["friend", "好使，今天省了一半时间", 120]]],
+    ["bluewhale", [["friend", "周五圆桌我把新驯的纪要 Agent 带上", 300], ["friend", "它现在能区分结论和待办了", 299]]],
+    ["azhi", [["me", "读书会纪要发我一份？", 2880], ["friend", "在圆桌归档里，搜「盲视」就有", 2870]]],
+    ["shanyue", [["friend", "看下你的用量看板，文献 Agent 又夜跑了", 480], ["me", "已经设了日限额，让它跑（", 470]]],
+  ];
+  for (const [handle, msgs] of chatSeed) {
+    const fid = friendByHandle.get(handle);
+    if (!fid) continue;
+    for (const [who, body, minsAgo] of msgs) {
+      await prisma.message.create({
+        data: {
+          fromId: who === "me" ? me.id : fid,
+          toId: who === "me" ? fid : me.id,
+          body,
+          at: iso(minsAgo),
+        },
+      });
+    }
   }
 
   const productBySlug = new Map(products.map((p) => [p.slug, p.id]));

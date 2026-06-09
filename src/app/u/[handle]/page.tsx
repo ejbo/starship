@@ -15,7 +15,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
 
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const friends = getFriends();
+  const friends = await getFriends();
   const wallPosts = getWallPosts();
   const showcaseProducts = await Promise.all(user.showcase.map((slug) => getBySlug(slug)));
   const showcase = showcaseProducts.filter((p): p is NonNullable<typeof p> => Boolean(p));

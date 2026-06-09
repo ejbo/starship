@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/db";
 import { getSessionUserIdOrNull } from "@/lib/session";
+import { getFriendsWithPresence } from "@/lib/friends-service";
 import { activity as mockActivity, liveRoundtables } from "@/lib/mock/activity";
-import { friends as mockFriends, wallPosts } from "@/lib/mock/users";
+import { wallPosts } from "@/lib/mock/users";
 import type {
   ActivityEvent,
   Friend,
@@ -177,9 +178,9 @@ export async function getCurrentUser(): Promise<CurrentUserView | null> {
   };
 }
 
-/** 好友的在线状态/聊天属 Phase 2，仍取 mock；昵称/色相已与种子一致 */
-export function getFriends(): Friend[] {
-  return mockFriends;
+/** 好友列表（含真实在线状态）。委托 friends-service。 */
+export function getFriends(): Promise<Friend[]> {
+  return getFriendsWithPresence();
 }
 
 export async function getFeed(): Promise<ActivityEvent[]> {

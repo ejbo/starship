@@ -29,11 +29,35 @@ model User {
   badges       Json            @default("[]")
   /// 展柜精选的产品 slug
   showcase     String[]        @default([])
+  /// 真实在线信号（ISO 字符串）：最近活跃时间
+  lastSeenAt   String?
+  /// 真实在线信号：当前正在使用的应用名 + 设置时刻
+  currentActivity String?
+  activityAt   String?
+  /// 种子/兜底展示状态（好友未真实登录时使用）：online|using|meeting|offline
+  presenceKind String          @default("offline")
+  presenceDetail String?
   library      LibraryEntry[]
   friendsOut   FriendEdge[]    @relation("FriendA")
   friendsIn    FriendEdge[]    @relation("FriendB")
   credentials  ApiCredential[]
   usage        UsageRecord[]
+  messagesSent     Message[]   @relation("MsgFrom")
+  messagesReceived Message[]   @relation("MsgTo")
+}
+
+model Message {
+  id     String  @id @default(cuid())
+  fromId String
+  toId   String
+  body   String
+  /// ISO 字符串
+  at     String
+  read   Boolean @default(false)
+  from   User    @relation("MsgFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to     User    @relation("MsgTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@index([fromId, toId])
 }
 
 model FriendEdge {
