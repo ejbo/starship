@@ -104,20 +104,24 @@ cd ~/starport && bash deploy/deploy.sh
 
 ---
 
-## 八、multillm 接入应用（如果也要上线）
+## 八、multillm 接入应用（让平台能"启动"它）
 
-multillm-starport 是独立小服务（`node server.mjs`，零依赖）。同机部署：
+multillm 是零依赖单文件服务，已随仓库带在 `deploy/multillm/server.mjs`。
+一条脚本搞定：探测公网 IP → 把平台里的 `multillm-chat` 造物配成 newtab+凭证+公网 entryUrl → pm2 起服务。
 
 ```bash
-git clone <multillm-starport仓库> multillm && cd multillm
-pm2 start server.mjs --name multillm
-# 关键环境变量（用 pm2 ecosystem 或 pm2 set 配）：
-#   STARPORT_BASE=https://starport.你的域名.com
-#   SELF_BASE=https://multillm.你的域名.com
-#   CLIENT_ID=app_multillm   CLIENT_SECRET=<开发者中心重置后的密钥>   PORT=4000
+cd ~/projects/starship
+bash deploy/setup-multillm.sh
 ```
-Caddyfile 已给 `multillm.你的域名.com` 配好反代到 4000。
-然后在星港「开发者中心 → MultiLLM」把**入口 URL** 改成 `https://multillm.你的域名.com`。
+
+然后**去 Lightsail 防火墙放行 TCP 4000**（source Anywhere），就能用了：
+平台里打开 multillm-chat → **启动** → 新标签页打开 `http://<你的IP>:4000` → 用星港账号登录（me/starport123）→ 并排多模型对话。
+
+要点：
+- multillm 走 OAuth（authorize/token）+ 平台 Gateway（`/api/v1/ai/chat`），用**登录用户在平台配的 API Key**，应用本身不碰明文 key。
+- 想要真实模型回复：用 me 登录平台 → **API 配置中心**填真实 Anthropic/OpenAI key（seed 灌的是假 key，会被上游 401）。
+- 域名/HTTPS 版：脚本默认用 `http://IP:端口`。等你上了 Caddy+域名，把 `STARPORT_PORT`/`MULTILLM_PORT` 换成子域并改 `Caddyfile`（`multillm.你的域名` 已配好反代 4000），用 `PUBLIC_IP=multillm.你的域名.com` 之类覆盖即可。
+- 改 client 密钥：`MULTILLM_CLIENT_SECRET=新值 bash deploy/setup-multillm.sh`（会同步更新平台里的 hash 和 multillm 自身）。
 
 ---
 
