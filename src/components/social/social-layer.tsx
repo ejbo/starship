@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  GripHorizontal,
   MessageSquare,
   Search,
   Send,
@@ -122,15 +123,18 @@ export function SocialLayer({
     setRequests(res.requests);
   }, []);
 
+  const loadedRef = useRef<Set<string>>(new Set());
   const openChat = useCallback(async (handle: string) => {
     setOpenChats((cur) => (cur.includes(handle) ? cur : [...cur, handle]));
     setActiveChat(handle);
     setUnread((u) => ({ ...u, [handle]: 0 }));
-    setConversations((cur) => {
-      if (cur[handle]) return cur;
-      loadConversationAction(handle).then((msgs) => setConversations((c) => ({ ...c, [handle]: msgs })));
-      return { ...cur, [handle]: [] };
-    });
+    // 副作用放在更新函数之外，避免「渲染时更新组件」告警
+    if (!loadedRef.current.has(handle)) {
+      loadedRef.current.add(handle);
+      setConversations((c) => (c[handle] ? c : { ...c, [handle]: [] }));
+      const msgs = await loadConversationAction(handle);
+      setConversations((c) => ({ ...c, [handle]: msgs }));
+    }
   }, []);
 
   const closeChat = useCallback((handle: string) => {
@@ -646,17 +650,62 @@ function ChatWindows({
   onClose: (h: string) => void;
   onSend: (h: string, body: string) => void;
 }) {
+  const W = 320;
+  const H = 416;
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const posRef = useRef(pos);
+  posRef.current = pos;
+  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
   const friendOf = (h: string) => friends.find((f) => f.handle === h);
   const active = activeChat ? friendOf(activeChat) : null;
   const messages = activeChat ? conversations[activeChat] ?? [] : [];
+
+  // 初始位置：localStorage 记忆 > 居中
+  useEffect(() => {
+    const clamp = (p: { x: number; y: number }) => ({
+      x: Math.min(Math.max(8, p.x), window.innerWidth - W - 8),
+      y: Math.min(Math.max(8, p.y), window.innerHeight - H - 8),
+    });
+    try {
+      const saved = localStorage.getItem("starport_chat_pos");
+      if (saved) {
+        setPos(clamp(JSON.parse(saved)));
+        return;
+      }
+    } catch {
+      /* ignore */
+    }
+    setPos(clamp({ x: (window.innerWidth - W) / 2, y: (window.innerHeight - H) / 2 }));
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, activeChat]);
 
-  if (openChats.length === 0) return null;
+  if (openChats.length === 0 || !pos) return null;
+
+  const onDragStart = (e: React.PointerEvent) => {
+    dragRef.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+  const onDragMove = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    const x = Math.min(Math.max(8, e.clientX - dragRef.current.dx), window.innerWidth - W - 8);
+    const y = Math.min(Math.max(8, e.clientY - dragRef.current.dy), window.innerHeight - H - 8);
+    setPos({ x, y });
+  };
+  const onDragEnd = () => {
+    if (dragRef.current && posRef.current) {
+      try {
+        localStorage.setItem("starport_chat_pos", JSON.stringify(posRef.current));
+      } catch {
+        /* ignore */
+      }
+    }
+    dragRef.current = null;
+  };
 
   const send = () => {
     const body = draft.trim();
@@ -668,7 +717,20 @@ function ChatWindows({
   const grouped = groupByDayAndSender(messages);
 
   return (
-    <div className="fixed right-[19rem] bottom-4 z-40 flex h-[26rem] w-[20rem] flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-[0_12px_40px_-12px_rgb(28_36_51/.3)]">
+    <div
+      className="fixed z-40 flex flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-[0_12px_40px_-12px_rgb(28_36_51/.3)]"
+      style={{ left: pos.x, top: pos.y, width: W, height: H }}
+    >
+      {/* 拖动条 */}
+      <div
+        onPointerDown={onDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        className="flex h-5 cursor-move touch-none items-center justify-center border-b border-line bg-card-hi text-mute hover:text-dim"
+        title="拖动移动窗口"
+      >
+        <GripHorizontal className="size-3.5" />
+      </div>
       {/* tab 栏 */}
       <div className="flex items-stretch gap-px overflow-x-auto border-b border-line bg-card-hi">
         {openChats.map((h) => {
