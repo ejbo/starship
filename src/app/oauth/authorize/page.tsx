@@ -12,6 +12,8 @@ const scopeLabels: Record<string, string> = {
   identity: "读取你的公开资料（昵称、头像、等级）",
   "achievements:write": "为你解锁该应用的成就",
   "stats:write": "记录你在该应用的游戏时长与统计",
+  "presence:update": "显示你「正在使用该应用」并累计使用时长",
+  "gateway:llm": "用你在平台配置的密钥经 Gateway 调用大模型",
 };
 
 export default async function AuthorizePage({

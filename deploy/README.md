@@ -104,24 +104,36 @@ cd ~/starport && bash deploy/deploy.sh
 
 ---
 
-## 八、multillm 接入应用（让平台能"启动"它）
+## 八、接入【完整版 multillm】（带「正在使用」+ 使用时长）
 
-multillm 是零依赖单文件服务，已随仓库带在 `deploy/multillm/server.mjs`。
-一条脚本搞定：探测公网 IP → 把平台里的 `multillm-chat` 造物配成 newtab+凭证+公网 entryUrl → pm2 起服务。
+完整 multillm 是单独的私有仓库 `github.com/ejbo/multillm-starport`（multi-llm-chat 的副本 + 星港接入，
+原项目未动）。它有自己的 Postgres（Lightsail 的 `ai4news` 库 `multillm_chat` schema）、admin、多 provider，
+功能零损失；接入星港后：从平台「启动」打开会用星港账号无感登录，好友处显示「正在使用 multillm」并累计使用时长。
 
+**前置**：先把本仓库（星港）最新版部上去——它新增了 `presence:update` scope 和
+`/api/v1/presence/heartbeat` 端点，完整 multillm 的心跳要靠它：
 ```bash
-cd ~/projects/starship
-bash deploy/setup-multillm.sh
+cd ~/projects/starship && git pull && pnpm install && pnpm build && pm2 restart starport --update-env
 ```
 
-然后**去 Lightsail 防火墙放行 TCP 4000**（source Anywhere），就能用了：
-平台里打开 multillm-chat → **启动** → 新标签页打开 `http://<你的IP>:4000` → 用星港账号登录（me/starport123）→ 并排多模型对话。
+**一条命令接入**（在 starship 仓库根）：
+```bash
+bash deploy/setup-multillm.sh
+```
+它会：探测公网 IP → 克隆/更新完整 multillm 仓库 → 部署它（pm2 `multillm-app` :4000）→ 把平台造物
+`multillm-chat` 配成 newtab + 凭证 + entryUrl=`http://<IP>:4000`。
+
+然后**去 Lightsail 防火墙放行 TCP 4000**（source Anywhere）。
+
+用法：平台里（me/starport123 登录）打开 multillm-chat → **启动** → 新标签页 `http://<IP>:4000`
+→ 无感跳一次星港授权回来 → 多模型并排对话。好友面板会显示你「正在使用 multillm」，
+个人主页/库里累计使用时长（满 1 小时显示 1 小时，按秒累加）。
 
 要点：
-- multillm 走 OAuth（authorize/token）+ 平台 Gateway（`/api/v1/ai/chat`），用**登录用户在平台配的 API Key**，应用本身不碰明文 key。
-- 想要真实模型回复：用 me 登录平台 → **API 配置中心**填真实 Anthropic/OpenAI key（seed 灌的是假 key，会被上游 401）。
-- 域名/HTTPS 版：脚本默认用 `http://IP:端口`。等你上了 Caddy+域名，把 `STARPORT_PORT`/`MULTILLM_PORT` 换成子域并改 `Caddyfile`（`multillm.你的域名` 已配好反代 4000），用 `PUBLIC_IP=multillm.你的域名.com` 之类覆盖即可。
-- 改 client 密钥：`MULTILLM_CLIENT_SECRET=新值 bash deploy/setup-multillm.sh`（会同步更新平台里的 hash 和 multillm 自身）。
+- **模型 key 走 multillm 自带 provider**（不走平台 Gateway，功能零损失）：进 `http://<IP>:4000/admin`
+  （密码见完整 app 的 `.env.production` 的 `ADMIN_PASSWORD`）或 Settings 配 Anthropic/OpenAI/… key。
+- 完整 multillm 也是纯 http demo，已自带 `COOKIE_SECURE=false`；上 HTTPS 后删掉。
+- 旧的零依赖单文件 demo（`deploy/multillm/server.mjs`）已被完整版取代，可忽略。
 
 ---
 

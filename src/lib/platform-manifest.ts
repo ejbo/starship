@@ -11,6 +11,7 @@ export const SCOPES: Record<string, string> = {
   identity: "读取用户公开资料（昵称、头像、等级）",
   "achievements:write": "为用户解锁该应用的成就",
   "stats:write": "记录用户在该应用的游戏时长与统计",
+  "presence:update": "更新用户「正在使用该应用」的实时状态并累计使用时长",
   "gateway:llm": "用用户在平台配置的密钥经 Gateway 调用大模型（应用拿不到明文 Key）",
 };
 
@@ -109,6 +110,19 @@ export const ENDPOINTS: Endpoint[] = [
       { name: "model", in: "body", type: "string", required: false, description: "模型 id，留空用默认" },
     ],
     responseExample: { reply: "……", provider: "anthropic", model: "claude-3-5-haiku-latest", usage: { tokensIn: 12, tokensOut: 64 } },
+  },
+  {
+    id: "presence.heartbeat",
+    method: "POST",
+    path: "/api/v1/presence/heartbeat",
+    summary: "上报「正在使用该应用」的心跳，刷新用户富状态并按秒累计使用时长",
+    auth: "bearer",
+    scope: "presence:update",
+    params: [
+      { name: "activity", in: "body", type: "string", required: true, description: "活动名（好友处显示为「正在使用 <activity>」）" },
+      { name: "secondsActive", in: "body", type: "number", required: false, description: "距上次心跳的活跃秒数，累加进使用时长（单次上限 120s）" },
+    ],
+    responseExample: { ok: true },
   },
   {
     id: "stats.global",
