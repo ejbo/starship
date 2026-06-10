@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Copy } from "lucide-react";
+import { useRef, useState, useTransition } from "react";
+import { Copy, Trash2, Upload } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
-import { updateProfileAction } from "@/app/settings/profile/actions";
+import { updateAvatarAction, updateProfileAction } from "@/app/settings/profile/actions";
 
 interface ProfileFormProps {
   handle: string;
@@ -11,14 +11,70 @@ interface ProfileFormProps {
   name: string;
   signature: string;
   avatarHue: number;
+  avatarUrl: string | null;
 }
 
-export function ProfileForm({ handle, friendCode, name, signature, avatarHue }: ProfileFormProps) {
+/** 客户端把图片缩放到 256×256 的 JPEG dataURL，控制体积 */
+function fileToAvatarDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const size = 256;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return reject(new Error("无法处理图片"));
+      // 居中裁剪为正方形
+      const min = Math.min(img.width, img.height);
+      const sx = (img.width - min) / 2;
+      const sy = (img.height - min) / 2;
+      ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("图片读取失败"));
+    };
+    img.src = url;
+  });
+}
+
+export function ProfileForm({ handle, friendCode, name, signature, avatarHue, avatarUrl }: ProfileFormProps) {
   const [displayName, setDisplayName] = useState(name);
   const [hue, setHue] = useState(avatarHue);
+  const [avatar, setAvatar] = useState<string | null>(avatarUrl);
+  const [avatarMsg, setAvatarMsg] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [pending, start] = useTransition();
   const [saved, setSaved] = useState<null | { ok: boolean; error?: string }>(null);
   const [copied, setCopied] = useState(false);
+
+  const onPickFile = async (file: File) => {
+    setAvatarMsg("处理中…");
+    try {
+      const dataUrl = await fileToAvatarDataUrl(file);
+      const res = await updateAvatarAction(dataUrl);
+      if (res.ok) {
+        setAvatar(dataUrl);
+        setAvatarMsg("已更新头像");
+      } else {
+        setAvatarMsg(res.error ?? "上传失败");
+      }
+    } catch (e) {
+      setAvatarMsg(e instanceof Error ? e.message : "上传失败");
+    }
+  };
+
+  const clearAvatar = async () => {
+    const res = await updateAvatarAction("");
+    if (res.ok) {
+      setAvatar(null);
+      setAvatarMsg("已恢复色相头像");
+    }
+  };
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
@@ -119,14 +175,46 @@ export function ProfileForm({ handle, friendCode, name, signature, avatarHue }: 
         </div>
       </form>
 
-      {/* 实时预览 */}
+      {/* 头像 + 实时预览 */}
       <div className="capsule h-fit p-5 text-center">
-        <p className="mb-3 text-xs text-dim">预览</p>
+        <p className="mb-3 text-xs text-dim">头像</p>
         <span className="mx-auto block w-fit">
-          <Avatar name={displayName || handle} hue={hue} size="xl" />
+          <Avatar name={displayName || handle} hue={hue} src={avatar} size="xl" />
         </span>
-        <p className="mt-3 text-lg font-bold">{displayName || handle}</p>
-        <p className="text-xs text-mute">@{handle} · {friendCode}</p>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onPickFile(f);
+            e.target.value = "";
+          }}
+        />
+        <div className="mt-3 flex justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs text-dim transition-colors hover:border-accent/40 hover:text-accent"
+          >
+            <Upload className="size-3.5" /> 上传图片
+          </button>
+          {avatar && (
+            <button
+              type="button"
+              onClick={clearAvatar}
+              className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs text-dim transition-colors hover:border-danger/40 hover:text-danger"
+            >
+              <Trash2 className="size-3.5" /> 移除
+            </button>
+          )}
+        </div>
+        {avatarMsg && <p className="mt-2 text-[11px] text-mute">{avatarMsg}</p>}
+        <div className="mt-4 border-t border-line pt-3">
+          <p className="text-lg font-bold">{displayName || handle}</p>
+          <p className="text-xs text-mute">@{handle} · {friendCode}</p>
+        </div>
       </div>
     </div>
   );

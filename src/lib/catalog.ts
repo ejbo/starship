@@ -144,6 +144,7 @@ export interface CurrentUserView {
   handle: string;
   name: string;
   avatarHue: number;
+  avatarUrl: string | null;
   level: number;
   signature: string;
   badges: { label: string; icon: string }[];
@@ -165,6 +166,7 @@ export async function getCurrentUser(): Promise<CurrentUserView | null> {
     handle: me.handle,
     name: me.name,
     avatarHue: me.avatarHue,
+    avatarUrl: me.avatarUrl,
     level: me.level,
     signature: me.signature,
     badges: (me.badges as { label: string; icon: string }[]) ?? [],

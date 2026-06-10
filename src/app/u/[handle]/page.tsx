@@ -7,7 +7,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { getProductIcon } from "@/lib/icons";
 import { getBySlug, getCurrentUser, getFriends, getWallPosts } from "@/lib/catalog";
 import { countUserUnlocks, getRecentUnlocks } from "@/lib/achievement-service";
-import { getEditableProfile } from "@/lib/profile-service";
+import { getEditableProfile, getPublicProfile, type PublicProfile } from "@/lib/profile-service";
+import { Showcase as ShowcaseGrid } from "@/components/profile/showcase";
 import { getSessionUserId } from "@/lib/session";
 import { logoutAction } from "@/app/(auth)/actions";
 
@@ -15,7 +16,13 @@ export const dynamic = "force-dynamic";
 
 export default async function ProfilePage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = await params;
-  if (handle !== "me") notFound();
+
+  // 他人公开主页
+  if (handle !== "me") {
+    const pub = await getPublicProfile(handle);
+    if (!pub) notFound();
+    return <PublicProfileView profile={pub} />;
+  }
 
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -45,7 +52,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
       {/* 头像与身份 */}
       <header className="relative z-10 -mt-10 flex flex-wrap items-end gap-5">
         <span className="rounded-full bg-panel p-1 shadow-[0_2px_12px_-4px_rgb(28_36_51/.2)]">
-          <Avatar name={user.name} hue={user.avatarHue} size="xl" />
+          <Avatar name={user.name} hue={user.avatarHue} src={user.avatarUrl} size="xl" />
         </span>
         <div className="pb-1">
           <h1 className="flex items-center gap-3 text-2xl font-bold">
@@ -178,6 +185,54 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
             </ul>
           </div>
         </aside>
+      </div>
+    </main>
+  );
+}
+
+/** 他人公开主页（只读） */
+async function PublicProfileView({ profile }: { profile: PublicProfile }) {
+  const showcaseProducts = (await Promise.all(profile.showcase.map((slug) => getBySlug(slug)))).filter(
+    (p): p is NonNullable<typeof p> => Boolean(p),
+  );
+
+  return (
+    <main className="mx-auto max-w-5xl px-4 sm:px-6">
+      <div className="-mx-4 h-36 bg-gradient-to-r from-[#dbe5f3] via-[#e7edf6] to-[#dfe9f2] sm:-mx-6" />
+      <header className="relative z-10 -mt-10 flex flex-wrap items-end gap-5">
+        <span className="rounded-full bg-panel p-1 shadow-[0_2px_12px_-4px_rgb(28_36_51/.2)]">
+          <Avatar name={profile.name} hue={profile.avatarHue} src={profile.avatarUrl} size="xl" />
+        </span>
+        <div className="pb-1">
+          <h1 className="flex items-center gap-3 text-2xl font-bold">
+            {profile.name}
+            <span className="rounded-full border border-line bg-panel px-2.5 py-0.5 text-xs font-semibold text-dim">
+              Lv.{profile.level}
+            </span>
+          </h1>
+          <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-dim">
+            <span>@{profile.handle}</span>
+            {profile.friendCode && (
+              <span className="rounded bg-card-hi px-1.5 py-0.5 font-mono text-xs text-accent">{profile.friendCode}</span>
+            )}
+          </p>
+          <p className="mt-1 text-sm text-dim">{profile.signature}</p>
+        </div>
+        <div className="ml-auto flex flex-wrap items-center gap-2 pb-1">
+          {profile.badges.map((badge) => {
+            const Icon = getProductIcon(badge.icon);
+            return (
+              <span key={badge.label} className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-2.5 py-1.5 text-xs text-dim">
+                <Icon className="size-3.5 text-accent" /> {badge.label}
+              </span>
+            );
+          })}
+        </div>
+      </header>
+
+      <div className="mt-8 space-y-6">
+        {showcaseProducts.length > 0 && <ShowcaseGrid products={showcaseProducts} />}
+        <p className="text-xs text-mute">这是 {profile.name} 的公开主页。</p>
       </div>
     </main>
   );

@@ -56,7 +56,10 @@ export type PresenceKind = "online" | "using" | "meeting" | "offline";
 export interface Friend {
   handle: string;
   name: string;
+  /** 我给该好友起的备注（仅自己可见），优先于 name 展示 */
+  remark?: string | null;
   avatarHue: number;
+  avatarUrl?: string | null;
   level: number;
   presence: { kind: PresenceKind; detail?: string };
 }

@@ -8,15 +8,62 @@ export interface EditableProfile {
   name: string;
   signature: string;
   avatarHue: number;
+  avatarUrl: string | null;
 }
 
 export async function getEditableProfile(): Promise<EditableProfile> {
   const userId = await getSessionUserId();
   const u = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { handle: true, friendCode: true, name: true, signature: true, avatarHue: true },
+    select: { handle: true, friendCode: true, name: true, signature: true, avatarHue: true, avatarUrl: true },
   });
   return u;
+}
+
+export interface PublicProfile {
+  handle: string;
+  name: string;
+  avatarHue: number;
+  avatarUrl: string | null;
+  level: number;
+  signature: string;
+  friendCode: string | null;
+  showcase: string[];
+  badges: { label: string; icon: string }[];
+}
+
+/** 任意用户的公开主页（按 handle）。不存在返回 null。 */
+export async function getPublicProfile(handle: string): Promise<PublicProfile | null> {
+  const u = await prisma.user.findUnique({
+    where: { handle },
+    select: {
+      handle: true,
+      name: true,
+      avatarHue: true,
+      avatarUrl: true,
+      level: true,
+      signature: true,
+      friendCode: true,
+      showcase: true,
+      badges: true,
+    },
+  });
+  if (!u) return null;
+  return { ...u, badges: (u.badges as { label: string; icon: string }[]) ?? [] };
+}
+
+const MAX_AVATAR_BYTES = 400_000; // 压缩后的 data URL 上限
+
+/** 设置/清除上传头像（dataUrl 为空字符串则清除，回退色相头像） */
+export async function updateAvatar(dataUrl: string): Promise<void> {
+  const userId = await getSessionUserId();
+  if (!dataUrl) {
+    await prisma.user.update({ where: { id: userId }, data: { avatarUrl: null } });
+    return;
+  }
+  if (!/^data:image\/(png|jpeg|webp);base64,/.test(dataUrl)) throw new Error("仅支持 PNG/JPEG/WebP 图片");
+  if (dataUrl.length > MAX_AVATAR_BYTES) throw new Error("图片过大，请换更小的图");
+  await prisma.user.update({ where: { id: userId }, data: { avatarUrl: dataUrl } });
 }
 
 export interface UpdateProfileInput {

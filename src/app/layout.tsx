@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { FriendsDock } from "@/components/friends/friends-dock";
+import { SocialLayer } from "@/components/social/social-layer";
 import { GlobalNav } from "@/components/global-nav";
 import { SiteFooter } from "@/components/site-footer";
 import { getCurrentUser } from "@/lib/catalog";
@@ -29,10 +29,10 @@ export default async function RootLayout({
         <div className="min-h-[70vh]">{children}</div>
         <SiteFooter />
         {user && (
-          <FriendsDock
-            me={{ name: user.name, avatarHue: user.avatarHue, friendCode: myCode }}
-            friends={friends}
-            requests={requests}
+          <SocialLayer
+            me={{ handle: user.handle, name: user.name, avatarHue: user.avatarHue, avatarUrl: user.avatarUrl, friendCode: myCode }}
+            initialFriends={friends}
+            initialRequests={requests}
           />
         )}
       </body>

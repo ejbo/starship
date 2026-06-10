@@ -51,30 +51,38 @@ async function friendIdsOf(userId: string): Promise<string[]> {
   return edges.map((e) => (e.aId === userId ? e.bId : e.aId));
 }
 
-/** 当前用户的好友（含派生在线状态） */
+/** 当前用户的好友（含派生在线状态、备注、头像） */
 export async function getFriendsWithPresence(): Promise<Friend[]> {
   const userId = await getSessionUserIdOrNull();
   if (!userId) return [];
   const ids = await friendIdsOf(userId);
-  const users = await prisma.user.findMany({
-    where: { id: { in: ids } },
-    select: {
-      handle: true,
-      name: true,
-      avatarHue: true,
-      level: true,
-      lastSeenAt: true,
-      currentActivity: true,
-      activityAt: true,
-      presenceKind: true,
-      presenceDetail: true,
-    },
-  });
+  const [users, notes] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        handle: true,
+        name: true,
+        avatarHue: true,
+        avatarUrl: true,
+        level: true,
+        lastSeenAt: true,
+        currentActivity: true,
+        activityAt: true,
+        presenceKind: true,
+        presenceDetail: true,
+      },
+    }),
+    prisma.friendNote.findMany({ where: { ownerUserId: userId, targetUserId: { in: ids } } }),
+  ]);
+  const remarkByTarget = new Map(notes.map((n) => [n.targetUserId, n.remark]));
   return users
     .map((u) => ({
       handle: u.handle,
       name: u.name,
+      remark: remarkByTarget.get(u.id) ?? null,
       avatarHue: u.avatarHue,
+      avatarUrl: u.avatarUrl,
       level: u.level,
       presence: derivePresence(u),
     }))
@@ -150,10 +158,9 @@ export async function sendFriendRequest(identifier: string): Promise<void> {
 
 export async function acceptFriendRequest(edgeId: string): Promise<void> {
   const userId = await getSessionUserId();
-  await prisma.friendEdge.updateMany({
-    where: { id: edgeId, bId: userId, status: "pending" },
-    data: { status: "accepted" },
-  });
+  const edge = await prisma.friendEdge.findUnique({ where: { id: edgeId }, select: { aId: true, bId: true, status: true } });
+  if (!edge || edge.bId !== userId || edge.status !== "pending") return;
+  await prisma.friendEdge.update({ where: { id: edgeId }, data: { status: "accepted" } });
 }
 
 export async function removeFriend(handle: string): Promise<void> {
@@ -167,5 +174,22 @@ export async function removeFriend(handle: string): Promise<void> {
         { aId: other.id, bId: userId },
       ],
     },
+  });
+}
+
+/** 设置/清除好友备注 */
+export async function setFriendRemark(handle: string, remark: string): Promise<void> {
+  const userId = await getSessionUserId();
+  const other = await prisma.user.findUnique({ where: { handle }, select: { id: true } });
+  if (!other) return;
+  const clean = remark.trim().slice(0, 24);
+  if (!clean) {
+    await prisma.friendNote.deleteMany({ where: { ownerUserId: userId, targetUserId: other.id } });
+    return;
+  }
+  await prisma.friendNote.upsert({
+    where: { ownerUserId_targetUserId: { ownerUserId: userId, targetUserId: other.id } },
+    update: { remark: clean },
+    create: { ownerUserId: userId, targetUserId: other.id, remark: clean },
   });
 }

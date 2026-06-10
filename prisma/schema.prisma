@@ -26,6 +26,8 @@ model User {
   /// salt:hash（scrypt）；种子好友可为空表示不可登录
   passwordHash String?
   avatarHue    Int
+  /// 上传头像（data URL，压缩后）；为空则用色相头像
+  avatarUrl    String?
   level        Int
   signature    String          @default("")
   tokenBalance String          @default("0")
@@ -50,6 +52,16 @@ model User {
   achievements AchievementUnlock[]
   messagesSent     Message[]   @relation("MsgFrom")
   messagesReceived Message[]   @relation("MsgTo")
+}
+
+/// 好友备注（我给某好友起的别名，仅自己可见）
+model FriendNote {
+  id           String @id @default(cuid())
+  ownerUserId  String
+  targetUserId String
+  remark       String
+
+  @@unique([ownerUserId, targetUserId])
 }
 
 model Message {
