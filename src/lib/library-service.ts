@@ -14,10 +14,17 @@ export async function isInLibrary(slug: string): Promise<boolean> {
   return Boolean(entry);
 }
 
-/** 获取（入库）：幂等；首次获取时 acquisitions++ */
+/**
+ * 获取/购买（入库）：幂等。
+ * - 免费产品：直接入库；
+ * - 付费产品：扣点数（不足则抛错）。这是未来支付系统的占位——支付即充值点数。
+ */
 export async function acquire(slug: string): Promise<void> {
   const userId = await getSessionUserId();
-  const product = await prisma.product.findUnique({ where: { slug }, select: { id: true } });
+  const product = await prisma.product.findUnique({
+    where: { slug },
+    select: { id: true, priceCredits: true },
+  });
   if (!product) throw new Error("产品不存在");
 
   await prisma.$transaction(async (tx) => {
@@ -26,32 +33,41 @@ export async function acquire(slug: string): Promise<void> {
       select: { id: true },
     });
     if (existing) return;
+
+    // 付费：扣点数
+    const price = product.priceCredits ?? 0;
+    if (price > 0) {
+      const me = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { credits: true } });
+      if (me.credits < price) throw new Error(`点数不足（需 ${price}，余 ${me.credits}）`);
+      await tx.user.update({ where: { id: userId }, data: { credits: { decrement: price } } });
+    }
+
     await tx.libraryEntry.create({
-      data: {
-        userId,
-        productId: product.id,
-        acquiredAt: today(),
-        lastUsedAt: today(),
-        usageHours: 0,
-      },
+      data: { userId, productId: product.id, acquiredAt: today(), lastUsedAt: today(), usageHours: 0 },
     });
     await tx.product.update({ where: { id: product.id }, data: { acquisitions: { increment: 1 } } });
   });
 }
 
-/** 移出库：同时 acquisitions-- */
+/** 当前用户点数余额 */
+export async function getMyCredits(): Promise<number> {
+  const userId = await getSessionUserId();
+  const u = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { credits: true } });
+  return u.credits;
+}
+
+/** 移出库：acquisitions--，付费产品退还点数（原型行为） */
 export async function removeFromLibrary(slug: string): Promise<void> {
   const userId = await getSessionUserId();
-  const product = await prisma.product.findUnique({ where: { slug }, select: { id: true } });
+  const product = await prisma.product.findUnique({ where: { slug }, select: { id: true, priceCredits: true } });
   if (!product) return;
 
   await prisma.$transaction(async (tx) => {
     const deleted = await tx.libraryEntry.deleteMany({ where: { userId, productId: product.id } });
     if (deleted.count > 0) {
-      await tx.product.update({
-        where: { id: product.id },
-        data: { acquisitions: { decrement: 1 } },
-      });
+      await tx.product.update({ where: { id: product.id }, data: { acquisitions: { decrement: 1 } } });
+      const price = product.priceCredits ?? 0;
+      if (price > 0) await tx.user.update({ where: { id: userId }, data: { credits: { increment: price } } });
     }
   });
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Search, Settings, Zap } from "lucide-react";
+import { Coins, Search, Settings, Zap } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/cn";
 
@@ -13,7 +13,7 @@ const navLinks = [
 ] as const;
 
 interface GlobalNavProps {
-  user: { name: string; avatarHue: number; tokenBalance: string } | null;
+  user: { name: string; avatarHue: number; avatarUrl: string | null; tokenBalance: string; credits: number } | null;
 }
 
 export function GlobalNav({ user }: GlobalNavProps) {
@@ -74,10 +74,19 @@ export function GlobalNav({ user }: GlobalNavProps) {
 
           {user ? (
             <>
+              {/* 点数余额 */}
+              <span
+                className="hidden items-center gap-1 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-dim sm:flex"
+                title="点数余额（用于购买产品）"
+              >
+                <Coins className="size-3.5 text-gold" />
+                {user.credits.toLocaleString("zh-CN")}
+              </span>
+
               {/* 用量额度 → 用量看板 */}
               <Link
                 href="/settings/usage"
-                className="hidden items-center gap-1 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-dim transition-colors hover:border-accent/50 hover:text-ink sm:flex"
+                className="hidden items-center gap-1 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-dim transition-colors hover:border-accent/50 hover:text-ink lg:flex"
                 title="查看用量看板"
               >
                 <Zap className="size-3.5 text-warn" />
@@ -97,7 +106,7 @@ export function GlobalNav({ user }: GlobalNavProps) {
               </Link>
 
               <Link href="/u/me" className="transition-opacity hover:opacity-80">
-                <Avatar name={user.name} hue={user.avatarHue} size="md" />
+                <Avatar name={user.name} hue={user.avatarHue} src={user.avatarUrl} size="md" />
               </Link>
             </>
           ) : (

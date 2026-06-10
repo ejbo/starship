@@ -2,6 +2,24 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { getSessionUserId } from "@/lib/session";
 
+/** 标记评测「有价值」（每人每条仅一次）。返回最新有价值数。 */
+export async function markHelpful(reviewId: string): Promise<{ helpful: number; voted: boolean }> {
+  const userId = await getSessionUserId();
+  try {
+    await prisma.reviewVote.create({ data: { reviewId, userId } });
+  } catch {
+    // 已投过：返回当前数
+    const r = await prisma.review.findUnique({ where: { id: reviewId }, select: { helpful: true } });
+    return { helpful: r?.helpful ?? 0, voted: true };
+  }
+  const updated = await prisma.review.update({
+    where: { id: reviewId },
+    data: { helpful: { increment: 1 } },
+    select: { helpful: true },
+  });
+  return { helpful: updated.helpful, voted: true };
+}
+
 /**
  * 提交评测：同一用户对同一产品仅一条（重复则更新）。
  * 评测者去规范化存储（authorName/avatarHue），并维护一个隐藏的 authorUserId 防重。

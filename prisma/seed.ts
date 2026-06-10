@@ -114,6 +114,7 @@ async function main() {
       level: currentUser.level,
       signature: currentUser.signature,
       tokenBalance: currentUser.tokenBalance,
+      credits: 5000,
       badges: currentUser.badges,
       showcase: currentUser.showcase,
     },

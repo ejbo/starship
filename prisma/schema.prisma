@@ -31,6 +31,8 @@ model User {
   level        Int
   signature    String          @default("")
   tokenBalance String          @default("0")
+  /// 平台点数余额（购买产品用；未来支付系统充值入口）
+  credits      Int             @default(1000)
   /// [{ label, icon }]
   badges       Json            @default("[]")
   /// 展柜精选的产品 slug
@@ -152,6 +154,14 @@ model Achievement {
   unlocks     AchievementUnlock[]
 
   @@unique([productId, key])
+}
+
+model ReviewVote {
+  id       String @id @default(cuid())
+  reviewId String
+  userId   String
+
+  @@unique([reviewId, userId])
 }
 
 model AchievementUnlock {

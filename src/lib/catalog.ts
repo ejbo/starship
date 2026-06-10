@@ -25,6 +25,7 @@ type DbProductWithReviews = DbProduct & { reviews: DbReview[] };
 
 function toReview(r: DbReview): Review {
   return {
+    id: r.id,
     author: r.authorName,
     avatarHue: r.avatarHue,
     isAgent: r.isAgent,
@@ -150,6 +151,7 @@ export interface CurrentUserView {
   badges: { label: string; icon: string }[];
   showcase: string[];
   tokenBalance: string;
+  credits: number;
   library: { slug: string; acquiredAt: string; lastUsedAt?: string; usageHours: number }[];
 }
 
@@ -172,6 +174,7 @@ export async function getCurrentUser(): Promise<CurrentUserView | null> {
     badges: (me.badges as { label: string; icon: string }[]) ?? [],
     showcase: me.showcase,
     tokenBalance: me.tokenBalance,
+    credits: me.credits,
     library: me.library
       .map((e) => ({
         slug: e.product.slug,

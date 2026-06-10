@@ -1,16 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Sparkles } from "lucide-react";
 import { AchievementList } from "@/components/product/achievement-list";
 import { AcquireBox } from "@/components/product/acquire-box";
 import { CapabilityList } from "@/components/product/capability-list";
 import { MediaGallery } from "@/components/product/media-gallery";
 import { ReviewForm } from "@/components/product/review-form";
 import { ReviewSection } from "@/components/product/review-section";
+import { Rating } from "@/components/ui/rating";
 import { TypeBadge, typeMeta } from "@/components/ui/type-badge";
-import { getBySlug } from "@/lib/catalog";
+import { describeCapability, getBySlug } from "@/lib/catalog";
 import { getAchievementsForUser } from "@/lib/achievement-service";
-import { isInLibrary } from "@/lib/library-service";
+import { getMyCredits, isInLibrary } from "@/lib/library-service";
 import { getMyReview } from "@/lib/review-service";
 import { getSessionUserIdOrNull } from "@/lib/session";
 
@@ -23,12 +24,12 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
   const userId = await getSessionUserIdOrNull();
   const acquired = userId ? await isInLibrary(slug) : false;
+  const credits = userId ? await getMyCredits() : 0;
   const myReview = userId ? await getMyReview(slug) : null;
   const achievements = await getAchievementsForUser(product.id, userId);
 
   return (
     <main className="mx-auto max-w-7xl px-4 pt-6 sm:px-6">
-      {/* 面包屑 */}
       <nav className="mb-4 flex items-center gap-1 text-xs text-mute">
         <Link href="/" className="transition-colors hover:text-accent">商店</Link>
         <ChevronRight className="size-3" />
@@ -44,10 +45,24 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           <TypeBadge type={product.type} />
         </div>
         <p className="mt-2 text-dim">{product.tagline}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Rating score={product.rating.score} count={product.rating.count} className="text-sm" />
+          <span className="text-sm text-mute">开发者 <span className="text-accent">{product.developer}</span></span>
+        </div>
+        {/* AI 集成能力芯片（取代标签，突出「它能用什么」） */}
+        {product.capabilities.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <Sparkles className="size-3.5 text-accent" />
+            {product.capabilities.map((cap) => (
+              <span key={cap} className="rounded-full border border-accent/25 bg-accent/5 px-2.5 py-0.5 text-xs text-accent">
+                {describeCapability(cap).name}
+              </span>
+            ))}
+          </div>
+        )}
       </header>
 
       <div className="grid gap-8 lg:grid-cols-[1fr_330px]">
-        {/* 左主栏 */}
         <div className="min-w-0 space-y-8">
           <MediaGallery art={product.art} />
 
@@ -61,22 +76,14 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           <AchievementList achievements={achievements} />
           {userId && <ReviewForm slug={product.slug} initial={myReview} />}
           <ReviewSection product={product} />
+
+          {/* 运行要求挪到底部 */}
+          <CapabilityList capabilities={product.capabilities} />
         </div>
 
-        {/* 右侧栏 */}
-        <aside className="space-y-4 lg:sticky lg:top-18 lg:self-start">
-          <AcquireBox product={product} acquired={acquired} signedOut={!userId} />
-          <CapabilityList capabilities={product.capabilities} />
-          <div className="capsule p-5">
-            <h3 className="mb-2.5 text-sm font-semibold">标签</h3>
-            <div className="flex flex-wrap gap-1.5">
-              {product.tags.map((tag) => (
-                <span key={tag} className="rounded bg-card-hi px-2 py-1 text-xs text-dim">
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </div>
+        {/* 右侧栏：只保留购买/获取盒 */}
+        <aside className="lg:sticky lg:top-18 lg:self-start">
+          <AcquireBox product={product} acquired={acquired} signedOut={!userId} credits={credits} />
         </aside>
       </div>
     </main>

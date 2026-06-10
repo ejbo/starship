@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { Star } from "lucide-react";
+import { ThumbsDown, ThumbsUp } from "lucide-react";
 import { submitReviewAction } from "@/app/p/[slug]/actions";
 import { cn } from "@/lib/cn";
 
@@ -10,9 +10,9 @@ interface ReviewFormProps {
   initial?: { score: number; body: string } | null;
 }
 
+/** Steam 式评测：推荐 / 不推荐 + 正文 */
 export function ReviewForm({ slug, initial }: ReviewFormProps) {
-  const [score, setScore] = useState(initial?.score ?? 5);
-  const [hover, setHover] = useState(0);
+  const [recommend, setRecommend] = useState<boolean>(initial ? initial.score >= 4 : true);
   const [pending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
@@ -21,7 +21,7 @@ export function ReviewForm({ slug, initial }: ReviewFormProps) {
     <form
       ref={formRef}
       action={(fd) => {
-        fd.set("score", String(score));
+        fd.set("recommend", recommend ? "yes" : "no");
         startTransition(async () => {
           await submitReviewAction(slug, fd);
           setDone(true);
@@ -29,26 +29,29 @@ export function ReviewForm({ slug, initial }: ReviewFormProps) {
       }}
       className="capsule space-y-3 p-5"
     >
-      <h3 className="text-sm font-semibold">{initial ? "更新你的评测" : "写一篇评测"}</h3>
+      <h3 className="text-sm font-semibold">{initial ? "更新你的评测" : "你推荐这个造物吗？"}</h3>
 
-      <div className="flex items-center gap-1" onMouseLeave={() => setHover(0)}>
-        {Array.from({ length: 5 }, (_, i) => {
-          const v = i + 1;
-          const filled = (hover || score) >= v;
-          return (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setScore(v)}
-              onMouseEnter={() => setHover(v)}
-              aria-label={`${v} 星`}
-              className="p-0.5"
-            >
-              <Star className={cn("size-6 transition-colors", filled ? "fill-star text-star" : "text-line")} />
-            </button>
-          );
-        })}
-        <span className="ml-1 text-sm text-dim">{score} 星</span>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => { setRecommend(true); setDone(false); }}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-1.5 rounded-md border py-2 text-sm font-medium transition-colors",
+            recommend ? "border-accent bg-accent/8 text-accent" : "border-line text-dim hover:bg-card-hi",
+          )}
+        >
+          <ThumbsUp className="size-4" /> 推荐
+        </button>
+        <button
+          type="button"
+          onClick={() => { setRecommend(false); setDone(false); }}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-1.5 rounded-md border py-2 text-sm font-medium transition-colors",
+            !recommend ? "border-danger bg-danger/8 text-danger" : "border-line text-dim hover:bg-card-hi",
+          )}
+        >
+          <ThumbsDown className="size-4" /> 不推荐
+        </button>
       </div>
 
       <textarea

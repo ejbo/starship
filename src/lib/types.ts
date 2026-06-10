@@ -8,6 +8,7 @@ export interface ProductArt {
 }
 
 export interface Review {
+  id?: string;
   author: string;
   avatarHue: number;
   isAgent?: boolean;
