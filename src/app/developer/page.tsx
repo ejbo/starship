@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Plus, Sparkles } from "lucide-react";
 import { CreateAppForm } from "@/components/developer/create-app-form";
 import { TypeBadge } from "@/components/ui/type-badge";
 import { listMyApps } from "@/lib/developer-service";
@@ -14,9 +14,17 @@ export default async function DeveloperPage() {
 
   return (
     <main className="mx-auto max-w-5xl px-4 pt-8 sm:px-6">
-      <header className="mb-2">
-        <h1 className="text-2xl font-bold">开发者中心</h1>
-        <p className="mt-1 text-sm text-dim">上架应用，定义成就，接入开放 API。</p>
+      <header className="mb-2 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">开发者中心</h1>
+          <p className="mt-1 text-sm text-dim">上架应用，定义成就，接入开放 API。</p>
+        </div>
+        <Link
+          href="/developer/integrate"
+          className="flex items-center gap-1.5 rounded-md border border-accent/30 bg-accent/5 px-3 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-accent/10"
+        >
+          <Sparkles className="size-4" /> 接入与开放 API
+        </Link>
       </header>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">

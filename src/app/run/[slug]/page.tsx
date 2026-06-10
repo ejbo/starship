@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ChevronLeft, ShieldCheck } from "lucide-react";
+import { ChevronLeft, LogOut, ShieldCheck } from "lucide-react";
 import { RunSandbox } from "@/components/runtime/run-sandbox";
 import { CapsuleArt } from "@/components/ui/capsule-art";
 import { describeCapability, getBySlug } from "@/lib/catalog";
@@ -48,6 +48,13 @@ export default async function RunPage({ params }: { params: Promise<{ slug: stri
         <span className="ml-auto flex items-center gap-1.5 text-xs text-free">
           <ShieldCheck className="size-3.5" /> 沙箱运行 · Key 不出平台
         </span>
+        <Link
+          href="/library"
+          className="flex items-center gap-1 rounded-md border border-line px-2.5 py-1 text-xs text-dim transition-colors hover:border-danger/40 hover:text-danger"
+          title="退出应用，返回库"
+        >
+          <LogOut className="size-3.5" /> 退出
+        </Link>
       </div>
 
       <RunSandbox slug={product.slug} entryUrl={product.entry.url} appName={product.name} />
