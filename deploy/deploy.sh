@@ -9,8 +9,8 @@ git pull --ff-only
 echo "==> 安装依赖"
 pnpm install --frozen-lockfile
 
-echo "==> 应用数据库迁移（生产用 deploy，不是 dev）"
-pnpm prisma migrate deploy
+echo "==> 确保 schema 存在并应用迁移（建 starport schema + migrate deploy，幂等）"
+pnpm db:bootstrap
 
 echo "==> 构建"
 pnpm build
