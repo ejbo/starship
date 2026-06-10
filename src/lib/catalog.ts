@@ -64,14 +64,17 @@ const withReviews = {
   reviews: { orderBy: { helpful: "desc" } as const },
 };
 
+/** 仅已发布的应用进入商店列表 */
+const PUBLISHED = { status: "published" };
+
 export async function getAllProducts(): Promise<Product[]> {
-  const rows = await prisma.product.findMany({ include: withReviews, orderBy: { acquisitions: "desc" } });
+  const rows = await prisma.product.findMany({ where: PUBLISHED, include: withReviews, orderBy: { acquisitions: "desc" } });
   return rows.map(toProduct);
 }
 
 export async function getFeatured(): Promise<Product[]> {
   const rows = await prisma.product.findMany({
-    where: { featured: true },
+    where: { ...PUBLISHED, featured: true },
     include: withReviews,
     orderBy: { acquisitions: "desc" },
   });
@@ -80,7 +83,7 @@ export async function getFeatured(): Promise<Product[]> {
 
 export async function getByType(type: ProductType): Promise<Product[]> {
   const rows = await prisma.product.findMany({
-    where: { type },
+    where: { ...PUBLISHED, type },
     include: withReviews,
     orderBy: { acquisitions: "desc" },
   });
@@ -101,7 +104,7 @@ export async function getDiscoveryQueue(): Promise<Product[]> {
       )
     : [];
   const rows = await prisma.product.findMany({
-    where: { id: { notIn: ownedIds } },
+    where: { ...PUBLISHED, id: { notIn: ownedIds } },
     include: withReviews,
     orderBy: { ratingScore: "desc" },
   });

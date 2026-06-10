@@ -7,6 +7,7 @@ import {
   identityAction,
   storageGetAction,
   storageSetAction,
+  unlockAction,
 } from "@/app/run/[slug]/run-actions";
 
 interface RpcMessage {
@@ -79,6 +80,12 @@ export function RunSandbox({ slug, entryUrl, appName }: { slug: string; entryUrl
             await storageSetAction(slug, params?.key ?? "", params?.value ?? "");
             reply(id, { ok: true });
             append({ dir: "out", text: `← storage.set ${params?.key} ✓` });
+            break;
+          }
+          case "achievements.unlock": {
+            const res = await unlockAction(slug, params?.key ?? "");
+            reply(id, res);
+            append({ dir: "out", text: `← 成就「${res.name}」${res.unlocked ? "已解锁 🏆" : "此前已解锁"}` });
             break;
           }
           default:

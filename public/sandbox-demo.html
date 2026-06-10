@@ -72,6 +72,14 @@
       <p class="muted" id="storeStatus" style="margin-top: 8px">读取已保存的内容…</p>
     </div>
 
+    <div class="card">
+      <h2>成就 · starport.achievements.unlock()</h2>
+      <div class="row">
+        <button id="unlock" style="white-space: nowrap">解锁「初次见面」</button>
+        <span class="muted" id="achStatus">点击解锁，将出现在你的成就墙</span>
+      </div>
+    </div>
+
     <script src="/starport-sdk.js"></script>
     <script>
       (async function () {
@@ -109,6 +117,18 @@
           var v = document.getElementById("note").value;
           await window.starport.storage.set("note", v);
           document.getElementById("storeStatus").textContent = "已保存：" + v + "（刷新仍在）";
+        });
+
+        // 成就
+        document.getElementById("unlock").addEventListener("click", async function () {
+          try {
+            var res = await window.starport.achievements.unlock("first_open");
+            document.getElementById("achStatus").textContent = res.unlocked
+              ? "🏆 解锁成功：" + res.name
+              : "此前已解锁：" + res.name;
+          } catch (e) {
+            document.getElementById("achStatus").textContent = "出错：" + e.message;
+          }
         });
       })();
     </script>

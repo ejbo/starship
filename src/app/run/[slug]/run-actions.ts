@@ -5,6 +5,7 @@ import {
   sdkIdentity,
   sdkStorageGet,
   sdkStorageSet,
+  sdkUnlock,
   type ChatResult,
   type SdkIdentity,
 } from "@/lib/runtime-service";
@@ -23,4 +24,8 @@ export async function storageGetAction(slug: string, key: string): Promise<strin
 
 export async function storageSetAction(slug: string, key: string, value: string): Promise<void> {
   return sdkStorageSet(slug, key, value);
+}
+
+export async function unlockAction(slug: string, key: string): Promise<{ unlocked: boolean; name: string }> {
+  return sdkUnlock(slug, key);
 }

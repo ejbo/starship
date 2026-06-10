@@ -49,12 +49,17 @@ export function GlobalNav({ user }: GlobalNavProps) {
               {link.label}
             </Link>
           ))}
-          <span
-            className="cursor-not-allowed rounded-md px-3 py-1.5 text-sm font-medium text-mute"
-            title="开发者中心 · Phase 6 开放"
-          >
-            开发者中心
-          </span>
+          {user && (
+            <Link
+              href="/developer"
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                pathname.startsWith("/developer") ? "bg-accent/8 text-accent" : "text-dim hover:bg-card-hi hover:text-ink",
+              )}
+            >
+              开发者中心
+            </Link>
+          )}
         </nav>
 
         <div className="ml-auto flex items-center gap-3">

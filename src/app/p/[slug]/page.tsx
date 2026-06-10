@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronRight } from "lucide-react";
+import { AchievementList } from "@/components/product/achievement-list";
 import { AcquireBox } from "@/components/product/acquire-box";
 import { CapabilityList } from "@/components/product/capability-list";
 import { MediaGallery } from "@/components/product/media-gallery";
@@ -8,6 +9,7 @@ import { ReviewForm } from "@/components/product/review-form";
 import { ReviewSection } from "@/components/product/review-section";
 import { TypeBadge, typeMeta } from "@/components/ui/type-badge";
 import { getBySlug } from "@/lib/catalog";
+import { getAchievementsForUser } from "@/lib/achievement-service";
 import { isInLibrary } from "@/lib/library-service";
 import { getMyReview } from "@/lib/review-service";
 import { getSessionUserIdOrNull } from "@/lib/session";
@@ -22,6 +24,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const userId = await getSessionUserIdOrNull();
   const acquired = userId ? await isInLibrary(slug) : false;
   const myReview = userId ? await getMyReview(slug) : null;
+  const achievements = await getAchievementsForUser(product.id, userId);
 
   return (
     <main className="mx-auto max-w-7xl px-4 pt-6 sm:px-6">
@@ -55,6 +58,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             ))}
           </section>
 
+          <AchievementList achievements={achievements} />
           {userId && <ReviewForm slug={product.slug} initial={myReview} />}
           <ReviewSection product={product} />
         </div>

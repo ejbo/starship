@@ -1,10 +1,13 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Clock, LayoutGrid, LogOut, MessageSquare, Star } from "lucide-react";
+import { Clock, LayoutGrid, LogOut, MessageSquare, Star, Trophy } from "lucide-react";
 import { FriendList } from "@/components/profile/friend-list";
 import { Showcase } from "@/components/profile/showcase";
 import { Avatar } from "@/components/ui/avatar";
 import { getProductIcon } from "@/lib/icons";
 import { getBySlug, getCurrentUser, getFriends, getWallPosts } from "@/lib/catalog";
+import { countUserUnlocks, getRecentUnlocks } from "@/lib/achievement-service";
+import { getSessionUserId } from "@/lib/session";
 import { logoutAction } from "@/app/(auth)/actions";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +28,9 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
     .slice(0, 3);
   const recentProducts = await Promise.all(recentEntries.map((e) => getBySlug(e.slug)));
   const recentlyUsed = recentEntries.map((entry, i) => ({ entry, name: recentProducts[i]?.name }));
+
+  const meId = await getSessionUserId();
+  const [recentUnlocks, unlockCount] = await Promise.all([getRecentUnlocks(meId), countUserUnlocks(meId)]);
 
   return (
     <main className="mx-auto max-w-7xl px-4 sm:px-6">
@@ -73,7 +79,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
             {[
               { icon: LayoutGrid, label: "库中产品", value: String(user.library.length) },
               { icon: Clock, label: "总使用时长", value: `${totalHours}h` },
-              { icon: Star, label: "评测", value: "17" },
+              { icon: Trophy, label: "成就", value: String(unlockCount) },
               { icon: MessageSquare, label: "圆桌主持", value: "9" },
             ].map(({ icon: Icon, label, value }) => (
               <div key={label} className="capsule p-4 text-center">
@@ -85,6 +91,36 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
           </div>
 
           <Showcase products={showcase} />
+
+          {/* 成就墙 */}
+          {recentUnlocks.length > 0 && (
+            <div className="capsule p-5">
+              <h3 className="mb-3 flex items-baseline gap-2 text-sm font-semibold">
+                <Trophy className="size-4 text-gold" /> 成就墙
+                <span className="text-xs font-normal text-mute">最近解锁</span>
+              </h3>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {recentUnlocks.map((u, i) => {
+                  const Icon = getProductIcon(u.icon);
+                  return (
+                    <Link
+                      key={i}
+                      href={`/p/${u.productSlug}`}
+                      className="flex items-center gap-2.5 rounded-md border border-line p-2.5 transition-colors hover:border-gold/40"
+                    >
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-gold/12 text-gold">
+                        <Icon className="size-4" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-medium">{u.name}</span>
+                        <span className="block truncate text-[11px] text-mute">{u.productName}</span>
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* 最近动态 */}
           <div className="capsule p-5">

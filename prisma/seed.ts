@@ -99,6 +99,38 @@ async function main() {
     },
   });
 
+  // sdk-playground 作为 me 拥有的开发者应用，配开放 API 凭证与成就 schema
+  const demoApp = await prisma.product.update({
+    where: { slug: "sdk-playground" },
+    data: {
+      status: "published",
+      ownerUserId: me.id,
+      clientId: "app_demo123",
+      clientSecretHash: hashPassword("sk_app_demo_secret_123"),
+    },
+  });
+  const demoAchievements = [
+    { key: "first_open", name: "初次见面", description: "首次启动 SDK Playground", icon: "sparkles", sort: 0 },
+    { key: "explorer", name: "探索者", description: "用过 SDK 的全部三种能力", icon: "telescope", sort: 1 },
+    { key: "power_user", name: "重度用户", description: "累计使用超过 10 小时", icon: "cpu", sort: 2 },
+  ];
+  for (const a of demoAchievements) {
+    await prisma.achievement.create({ data: { productId: demoApp.id, ...a } });
+  }
+  // 给 me 预解锁一个，成就墙有内容（first_open 留给现场演示）
+  const explorer = await prisma.achievement.findUniqueOrThrow({
+    where: { productId_key: { productId: demoApp.id, key: "explorer" } },
+  });
+  await prisma.achievementUnlock.create({
+    data: { achievementId: explorer.id, userId: me.id, at: new Date().toISOString() },
+  });
+  // me 需先拥有该应用，稀有度分母与库联动
+  await prisma.libraryEntry.upsert({
+    where: { userId_productId: { userId: me.id, productId: demoApp.id } },
+    update: {},
+    create: { userId: me.id, productId: demoApp.id, acquiredAt: "2026-06-09", lastUsedAt: "2026-06-09", usageHours: 2 },
+  });
+
   const friendByHandle = new Map<string, string>();
   for (const f of friends) {
     const friend = await prisma.user.create({

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { decryptSecret } from "@/lib/crypto";
 import { getSessionUserId } from "@/lib/session";
 import { capabilityProvider, providerMeta } from "@/lib/providers";
+import { unlockAchievement } from "@/lib/achievement-service";
 
 export interface SdkIdentity {
   name: string;
@@ -98,4 +99,13 @@ export async function sdkStorageSet(slug: string, key: string, value: string): P
     update: { value },
     create: { userId, productSlug: slug, key, value },
   });
+}
+
+/** SDK achievements.unlock：与开放 API 共用同一成就后端 */
+export async function sdkUnlock(slug: string, key: string): Promise<{ unlocked: boolean; name: string }> {
+  const userId = await getSessionUserId();
+  const product = await prisma.product.findUnique({ where: { slug }, select: { id: true } });
+  if (!product) throw new Error("应用不存在");
+  const res = await unlockAchievement(product.id, userId, key);
+  return { unlocked: res.unlocked, name: res.name };
 }

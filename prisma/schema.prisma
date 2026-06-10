@@ -43,6 +43,7 @@ model User {
   credentials  ApiCredential[]
   usage        UsageRecord[]
   appStorage   AppStorage[]
+  achievements AchievementUnlock[]
   messagesSent     Message[]   @relation("MsgFrom")
   messagesReceived Message[]   @relation("MsgTo")
 }
@@ -103,8 +104,55 @@ model Product {
   releasedAt   String
   updatedAt    String
   featured     Boolean        @default(false)
+  /// draft | published（仅 published 进商店列表）
+  status       String         @default("published")
+  /// 开发者归属（null = 官方/种子）
+  ownerUserId  String?
+  /// 开放 API / OAuth 应用凭证
+  clientId         String?    @unique
+  clientSecretHash String?
   reviews      Review[]
   inLibraries  LibraryEntry[]
+  achievements Achievement[]
+}
+
+model Achievement {
+  id          String              @id @default(cuid())
+  productId   String
+  /// 稳定 key（API 调用用）
+  key         String
+  name        String
+  description String
+  icon        String              @default("trophy")
+  hidden      Boolean             @default(false)
+  sort        Int                 @default(0)
+  product     Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  unlocks     AchievementUnlock[]
+
+  @@unique([productId, key])
+}
+
+model AchievementUnlock {
+  id            String      @id @default(cuid())
+  achievementId String
+  userId        String
+  at            String
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([achievementId, userId])
+  @@index([userId])
+}
+
+model StatRecord {
+  id          String @id @default(cuid())
+  productId   String
+  userId      String
+  /// playtime_minutes | 自定义 key
+  key         String
+  value       Int    @default(0)
+
+  @@unique([productId, userId, key])
 }
 
 model Review {

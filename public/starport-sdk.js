@@ -48,5 +48,11 @@
         return call("storage.set", { key: key, value: value });
       },
     },
+    achievements: {
+      /** 解锁成就（与开放 API achievements/unlock 等价） */
+      unlock: function (key) {
+        return call("achievements.unlock", { key: key });
+      },
+    },
   };
 })();
