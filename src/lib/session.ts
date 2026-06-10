@@ -14,7 +14,14 @@ const sessionOptions: SessionOptions = {
   cookieOptions: {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    // HTTPS 下用 secure cookie。纯 HTTP demo（http://IP:3000）必须设 COOKIE_SECURE=false，
+    // 否则浏览器不保存登录 cookie，表现为"登录后又被要求重新登录"。上了 HTTPS 再删掉它。
+    secure:
+      process.env.COOKIE_SECURE === "false"
+        ? false
+        : process.env.COOKIE_SECURE === "true"
+          ? true
+          : process.env.NODE_ENV === "production",
     maxAge: 60 * 60 * 24 * 30,
   },
 };

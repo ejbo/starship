@@ -39,8 +39,19 @@ function encryptSecret(plaintext: string): string {
   return [iv.toString("base64"), cipher.getAuthTag().toString("base64"), ct.toString("base64")].join(".");
 }
 
+const seedUrl = process.env.DATABASE_URL!;
+// 与 src/lib/db.ts 一致：连接串带 ?schema=xxx 时把数据写进该 schema（生产 starport）。
+let seedSchema: string | undefined;
+try {
+  seedSchema = new URL(seedUrl).searchParams.get("schema") ?? undefined;
+} catch {
+  // 非标准 URL：退回默认 schema
+}
 const prisma = new PrismaClient({
-  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
+  adapter: new PrismaPg(
+    { connectionString: seedUrl },
+    seedSchema ? { schema: seedSchema } : undefined,
+  ),
 });
 
 async function main() {
