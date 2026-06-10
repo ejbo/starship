@@ -30,6 +30,11 @@ pnpm dev          # http://localhost:3000
 | `/settings/gateway` | API 配置中心：增删密钥（AES-GCM 加密）、日限额、Provider 覆盖状态 |
 | `/settings/usage` | 用量看板：按应用/Provider/日拆解 token 与成本 |
 | `/login` `/register` | 账号登录/注册（iron-session）|
+| `/developer` | 开发者中心：上架应用、成就 schema、API 凭证与接入文档 |
+| `/oauth/authorize` | Sign in with StarPort 授权页（OAuth2 授权码）|
+| `/api/v1/*` | 开放 REST API：oauth/token · me · achievements(/unlock) · stats(/global) |
+
+**开放 API（外部 web 应用接入，参照 Steamworks）**：开发者在 `/developer` 建应用拿 `client_id`/`client_secret` → 用户经 `/oauth/authorize` 授权 → 应用用 `code` 换 `access_token` → 调 `/api/v1/*` 读用户资料、回传成就与游戏时长。沙箱内应用则用注入的 Platform SDK（`starport.achievements.unlock` 等），两条路径共用同一成就/统计后端。演示应用凭证：`client_id=app_demo123` / `client_secret=sk_app_demo_secret_123`。
 
 **演示账号**：`me` / `starport123`（或任意好友 handle 如 `linyuan` / `friend123`）。商店与详情页可匿名浏览；获取/评测/库/个人主页/设置需登录。
 

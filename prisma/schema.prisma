@@ -155,6 +155,20 @@ model StatRecord {
   @@unique([productId, userId, key])
 }
 
+/// OAuth2 授权码 + 用户访问令牌（外部 web 应用用）
+model OAuthGrant {
+  id            String   @id @default(cuid())
+  productId     String
+  userId        String
+  scopes        String[]
+  code          String?  @unique
+  codeExpiresAt String?
+  accessToken   String?  @unique
+  createdAt     String
+
+  @@unique([productId, userId])
+}
+
 model Review {
   id         String  @id @default(cuid())
   productId  String
