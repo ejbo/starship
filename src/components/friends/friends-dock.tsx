@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, ChevronDown, ChevronLeft, MessageSquareText, Search, Send, UserPlus, Users, X } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, Copy, MessageSquareText, Search, Send, UserPlus, Users, X } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import {
   acceptRequestAction,
@@ -216,10 +216,11 @@ function ChatView({ me, friend, onBack }: { me: { name: string; avatarHue: numbe
   );
 }
 
-function AddFriendView({ requests, onBack }: { requests: FriendRequestView[]; onBack: () => void }) {
+function AddFriendView({ myCode, requests, onBack }: { myCode: string | null; requests: FriendRequestView[]; onBack: () => void }) {
   const [handle, setHandle] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [pendingReqs, setPendingReqs] = useState(requests);
+  const [copied, setCopied] = useState(false);
 
   const submit = async () => {
     const h = handle.trim();
@@ -238,13 +239,33 @@ function AddFriendView({ requests, onBack }: { requests: FriendRequestView[]; on
         <p className="text-sm font-medium">添加好友</p>
       </div>
       <div className="grow space-y-4 overflow-y-auto p-3">
+        {/* 你的好友码 */}
+        {myCode && (
+          <div className="rounded-md border border-line bg-card-hi p-2.5">
+            <p className="text-[11px] text-mute">你的好友码（分享给别人加你）</p>
+            <div className="mt-1 flex items-center gap-2">
+              <code className="grow font-mono text-sm font-semibold text-accent">{myCode}</code>
+              <button
+                onClick={() => {
+                  navigator.clipboard?.writeText(myCode);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1200);
+                }}
+                className="text-mute transition-colors hover:text-accent"
+                aria-label="复制好友码"
+              >
+                {copied ? <span className="text-[11px] text-free">已复制</span> : <Copy className="size-3.5" />}
+              </button>
+            </div>
+          </div>
+        )}
         <div className="space-y-2">
           <div className="flex gap-2">
             <input
               value={handle}
               onChange={(e) => setHandle(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submit()}
-              placeholder="输入对方用户名"
+              placeholder="对方的好友码或用户名"
               className="grow rounded-md border border-line bg-page px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
             />
             <button onClick={submit} className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-accent-deep">
@@ -285,7 +306,7 @@ export function FriendsDock({
   friends,
   requests,
 }: {
-  me: { name: string; avatarHue: number };
+  me: { name: string; avatarHue: number; friendCode: string | null };
   friends: Friend[];
   requests: FriendRequestView[];
 }) {
@@ -315,7 +336,7 @@ export function FriendsDock({
             {chatWith ? (
               <ChatView me={me} friend={chatWith} onBack={() => setChatWith(null)} />
             ) : view === "add" ? (
-              <AddFriendView requests={requests} onBack={() => setView("list")} />
+              <AddFriendView myCode={me.friendCode} requests={requests} onBack={() => setView("list")} />
             ) : (
               <>
                 {/* 你自己的状态头 */}

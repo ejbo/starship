@@ -17,7 +17,11 @@ enum ProductType {
 
 model User {
   id           String          @id @default(cuid())
+  /// 登录用户名（唯一、不可改）
   handle       String          @unique
+  /// 唯一好友码（不可改，加好友用，如 SP-7K3M9Q）
+  friendCode   String?         @unique
+  /// 展示昵称（可改、可重名）
   name         String
   /// salt:hash（scrypt）；种子好友可为空表示不可登录
   passwordHash String?

@@ -3,7 +3,7 @@ import { FriendsDock } from "@/components/friends/friends-dock";
 import { GlobalNav } from "@/components/global-nav";
 import { SiteFooter } from "@/components/site-footer";
 import { getCurrentUser } from "@/lib/catalog";
-import { getFriendsWithPresence, getIncomingRequests, touchPresence } from "@/lib/friends-service";
+import { getFriendsWithPresence, getIncomingRequests, getMyFriendCode, touchPresence } from "@/lib/friends-service";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,9 +16,9 @@ export default async function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const user = await getCurrentUser();
   if (user) await touchPresence();
-  const [friends, requests] = user
-    ? await Promise.all([getFriendsWithPresence(), getIncomingRequests()])
-    : [[], []];
+  const [friends, requests, myCode] = user
+    ? await Promise.all([getFriendsWithPresence(), getIncomingRequests(), getMyFriendCode()])
+    : [[], [], null];
 
   return (
     <html lang="zh-CN">
@@ -30,7 +30,7 @@ export default async function RootLayout({
         <SiteFooter />
         {user && (
           <FriendsDock
-            me={{ name: user.name, avatarHue: user.avatarHue }}
+            me={{ name: user.name, avatarHue: user.avatarHue, friendCode: myCode }}
             friends={friends}
             requests={requests}
           />

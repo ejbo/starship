@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Clock, LayoutGrid, LogOut, MessageSquare, Star, Trophy } from "lucide-react";
+import { Clock, LayoutGrid, LogOut, MessageSquare, Pencil, Star, Trophy } from "lucide-react";
 import { FriendList } from "@/components/profile/friend-list";
 import { Showcase } from "@/components/profile/showcase";
 import { Avatar } from "@/components/ui/avatar";
 import { getProductIcon } from "@/lib/icons";
 import { getBySlug, getCurrentUser, getFriends, getWallPosts } from "@/lib/catalog";
 import { countUserUnlocks, getRecentUnlocks } from "@/lib/achievement-service";
+import { getEditableProfile } from "@/lib/profile-service";
 import { getSessionUserId } from "@/lib/session";
 import { logoutAction } from "@/app/(auth)/actions";
 
@@ -30,7 +31,11 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
   const recentlyUsed = recentEntries.map((entry, i) => ({ entry, name: recentProducts[i]?.name }));
 
   const meId = await getSessionUserId();
-  const [recentUnlocks, unlockCount] = await Promise.all([getRecentUnlocks(meId), countUserUnlocks(meId)]);
+  const [recentUnlocks, unlockCount, editable] = await Promise.all([
+    getRecentUnlocks(meId),
+    countUserUnlocks(meId),
+    getEditableProfile(),
+  ]);
 
   return (
     <main className="mx-auto max-w-7xl px-4 sm:px-6">
@@ -49,9 +54,21 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
               Lv.{user.level}
             </span>
           </h1>
+          <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-dim">
+            <span>@{editable.handle}</span>
+            {editable.friendCode && (
+              <span className="rounded bg-card-hi px-1.5 py-0.5 font-mono text-xs text-accent">{editable.friendCode}</span>
+            )}
+          </p>
           <p className="mt-1 text-sm text-dim">{user.signature}</p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2 pb-1">
+          <Link
+            href="/settings/profile"
+            className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-2.5 py-1.5 text-xs text-dim transition-colors hover:border-accent/40 hover:text-accent"
+          >
+            <Pencil className="size-3.5" /> 编辑资料
+          </Link>
           {user.badges.map((badge) => {
             const Icon = getProductIcon(badge.icon);
             return (

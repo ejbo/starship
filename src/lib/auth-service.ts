@@ -2,8 +2,19 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { setSessionUser } from "@/lib/session";
+import { generateFriendCode } from "@/lib/tokens";
 
 const HANDLE_RE = /^[a-z0-9_]{3,20}$/;
+
+/** 生成全站唯一的好友码 */
+async function uniqueFriendCode(): Promise<string> {
+  for (let i = 0; i < 50; i++) {
+    const code = generateFriendCode();
+    const taken = await prisma.user.findUnique({ where: { friendCode: code }, select: { id: true } });
+    if (!taken) return code;
+  }
+  throw new Error("好友码生成失败，请重试");
+}
 
 export async function register(handle: string, name: string, password: string): Promise<void> {
   const h = handle.trim().toLowerCase();
@@ -17,6 +28,7 @@ export async function register(handle: string, name: string, password: string): 
   const user = await prisma.user.create({
     data: {
       handle: h,
+      friendCode: await uniqueFriendCode(),
       name: displayName,
       passwordHash: hashPassword(password),
       avatarHue: hueFromString(h),

@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { getSessionUserId, getSessionUserIdOrNull } from "@/lib/session";
+import { normalizeFriendCode } from "@/lib/tokens";
 import type { Friend, PresenceKind } from "@/lib/types";
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
@@ -107,10 +108,30 @@ export async function getIncomingRequests(): Promise<FriendRequestView[]> {
   }));
 }
 
-export async function sendFriendRequest(handle: string): Promise<void> {
+export async function getMyFriendCode(): Promise<string | null> {
+  const userId = await getSessionUserIdOrNull();
+  if (!userId) return null;
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { friendCode: true } });
+  return u?.friendCode ?? null;
+}
+
+/** 按好友码（SP-XXXXXX）或用户名解析目标用户 */
+async function resolveTarget(identifier: string): Promise<{ id: string } | null> {
+  const raw = identifier.trim();
+  if (!raw) return null;
+  // 好友码优先（含 - 或全大写无空格的短码）
+  if (/^sp-/i.test(raw) || /^[0-9a-z]{6}$/i.test(raw)) {
+    const byCode = await prisma.user.findUnique({ where: { friendCode: normalizeFriendCode(raw) }, select: { id: true } });
+    if (byCode) return byCode;
+  }
+  return prisma.user.findUnique({ where: { handle: raw.toLowerCase() }, select: { id: true } });
+}
+
+/** identifier 可为好友码或用户名 */
+export async function sendFriendRequest(identifier: string): Promise<void> {
   const userId = await getSessionUserId();
-  const target = await prisma.user.findUnique({ where: { handle: handle.trim().toLowerCase() }, select: { id: true } });
-  if (!target) throw new Error("找不到该用户");
+  const target = await resolveTarget(identifier);
+  if (!target) throw new Error("找不到该用户（请核对好友码或用户名）");
   if (target.id === userId) throw new Error("不能添加自己");
 
   const existing = await prisma.friendEdge.findFirst({

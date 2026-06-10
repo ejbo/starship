@@ -1,5 +1,7 @@
 /**
- * 把 Phase 0 的 mock 数据灌入数据库（幂等：先清空再插入）。
+ * 把 mock 数据灌入数据库。
+ * - 默认非破坏性：库里已有用户则直接跳过，绝不清库（保护你注册的账号）。
+ * - 强制重置（清库重灌）：SEED_FORCE=1 pnpm db:seed   或   pnpm db:reset
  * 运行：pnpm db:seed
  */
 import { config as dotenv } from "dotenv";
@@ -19,6 +21,15 @@ function hashPassword(password: string): string {
   return `${salt.toString("hex")}:${scryptSync(password, salt, 64).toString("hex")}`;
 }
 
+/** 与 src/lib/tokens.ts 同算法的好友码 */
+const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+function friendCode(): string {
+  const b = randomBytes(6);
+  let s = "";
+  for (let i = 0; i < 6; i++) s += CODE_ALPHABET[b[i] % CODE_ALPHABET.length];
+  return "SP-" + s;
+}
+
 /** 与 src/lib/crypto.ts 同算法（种子脚本独立运行，避免 server-only 导入） */
 function encryptSecret(plaintext: string): string {
   const key = Buffer.from(process.env.STARPORT_SECRET!, "hex");
@@ -33,6 +44,14 @@ const prisma = new PrismaClient({
 });
 
 async function main() {
+  const force = process.env.SEED_FORCE === "1";
+  const existing = await prisma.user.count();
+  if (existing > 0 && !force) {
+    console.log(`数据库已有 ${existing} 个用户，跳过种子（不清库）。如需清库重灌：pnpm db:reset`);
+    return;
+  }
+
+  // 仅在强制重置或空库时清库
   await prisma.usageRecord.deleteMany();
   await prisma.apiCredential.deleteMany();
   await prisma.activityEvent.deleteMany();
@@ -88,6 +107,7 @@ async function main() {
   const me = await prisma.user.create({
     data: {
       handle: currentUser.handle,
+      friendCode: friendCode(),
       name: currentUser.name,
       passwordHash: hashPassword("starport123"),
       avatarHue: currentUser.avatarHue,
@@ -136,6 +156,7 @@ async function main() {
     const friend = await prisma.user.create({
       data: {
         handle: f.handle,
+        friendCode: friendCode(),
         name: f.name,
         // 好友演示账号统一口令（可用任意好友 handle / friend123 登录体验另一视角）
         passwordHash: hashPassword("friend123"),

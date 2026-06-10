@@ -8,7 +8,8 @@
     "start": "next start",
     "db:start": "pg_ctl -D .pgdata -l .pgdata/log -o \"-p 5544 -k /tmp\" start",
     "db:stop": "pg_ctl -D .pgdata stop",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "SEED_FORCE=1 tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
