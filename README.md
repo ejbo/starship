@@ -29,6 +29,7 @@ pnpm dev          # http://localhost:3000
 | `/community` | 动态 Feed + 进行中的圆桌 |
 | `/settings/gateway` | API 配置中心：增删密钥（AES-GCM 加密）、日限额、Provider 覆盖状态 |
 | `/settings/usage` | 用量看板：按应用/Provider/日拆解 token 与成本 |
+| `/settings/gateway` | 含 **Playground**：用你的密钥真实试调大模型（真实 token 计量、受日限额约束）|
 | `/login` `/register` | 账号登录/注册（iron-session）|
 | `/developer` | 开发者中心：上架应用、成就 schema、API 凭证与接入文档 |
 | `/oauth/authorize` | Sign in with StarPort 授权页（OAuth2 授权码）|

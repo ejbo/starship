@@ -1,5 +1,6 @@
 import { Check, Trash2, X } from "lucide-react";
 import { AddCredentialForm } from "@/components/settings/add-credential-form";
+import { GatewayPlayground } from "@/components/settings/gateway-playground";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
 import { getProductIcon } from "@/lib/icons";
 import { providerMeta } from "@/lib/providers";
@@ -10,6 +11,10 @@ export const dynamic = "force-dynamic";
 
 export default async function GatewayPage() {
   const [credentials, coverage] = await Promise.all([listCredentials(), getProviderCoverage()]);
+  // 去重出用户已配置的 provider，供 Playground 选择
+  const configuredProviders = [...new Map(credentials.map((c) => [c.provider, providerMeta(c.provider)])).values()].map(
+    (m) => ({ id: m.id, name: m.name }),
+  );
 
   return (
     <main className="mx-auto max-w-5xl px-4 pt-8 sm:px-6">
@@ -113,6 +118,11 @@ export default async function GatewayPage() {
         <div className="lg:sticky lg:top-18 lg:self-start">
           <AddCredentialForm />
         </div>
+      </div>
+
+      {/* Playground */}
+      <div className="mt-6">
+        <GatewayPlayground providers={configuredProviders} />
       </div>
     </main>
   );
