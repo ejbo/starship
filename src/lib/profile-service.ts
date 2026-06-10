@@ -21,6 +21,7 @@ export async function getEditableProfile(): Promise<EditableProfile> {
 }
 
 export interface PublicProfile {
+  id: string;
   handle: string;
   name: string;
   avatarHue: number;
@@ -37,6 +38,7 @@ export async function getPublicProfile(handle: string): Promise<PublicProfile | 
   const u = await prisma.user.findUnique({
     where: { handle },
     select: {
+      id: true,
       handle: true,
       name: true,
       avatarHue: true,

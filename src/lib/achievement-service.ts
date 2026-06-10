@@ -118,3 +118,53 @@ export async function getRecentUnlocks(userId: string, limit = 6): Promise<Recen
 export async function countUserUnlocks(userId: string): Promise<number> {
   return prisma.achievementUnlock.count({ where: { userId } });
 }
+
+export interface ShowcaseAchievement {
+  name: string;
+  icon: string;
+  productSlug: string;
+  productName: string;
+  /** 全站解锁率 0-100，越低越稀有 */
+  rarity: number;
+  at: string;
+}
+
+/** 成就展柜：用户解锁的成就，按稀有度（最稀有在前）排序 */
+export async function getUserAchievementShowcase(userId: string, limit = 6): Promise<ShowcaseAchievement[]> {
+  const unlocks = await prisma.achievementUnlock.findMany({
+    where: { userId },
+    select: {
+      at: true,
+      achievement: {
+        select: { id: true, name: true, icon: true, productId: true, product: { select: { slug: true, name: true } } },
+      },
+    },
+  });
+  if (unlocks.length === 0) return [];
+
+  // 批量算稀有度：每个成就的解锁数 / 拥有该产品的人数
+  const productIds = [...new Set(unlocks.map((u) => u.achievement.productId))];
+  const ownerCounts = new Map<string, number>();
+  await Promise.all(
+    productIds.map(async (pid) => ownerCounts.set(pid, Math.max(1, await prisma.libraryEntry.count({ where: { productId: pid } })))),
+  );
+  const achIds = unlocks.map((u) => u.achievement.id);
+  const totals = await prisma.achievementUnlock.groupBy({
+    by: ["achievementId"],
+    where: { achievementId: { in: achIds } },
+    _count: { _all: true },
+  });
+  const totalById = new Map(totals.map((t) => [t.achievementId, t._count._all]));
+
+  return unlocks
+    .map((u) => ({
+      name: u.achievement.name,
+      icon: u.achievement.icon,
+      productSlug: u.achievement.product.slug,
+      productName: u.achievement.product.name,
+      rarity: Math.round(((totalById.get(u.achievement.id) ?? 1) / (ownerCounts.get(u.achievement.productId) ?? 1)) * 100),
+      at: u.at,
+    }))
+    .sort((a, b) => a.rarity - b.rarity || b.at.localeCompare(a.at))
+    .slice(0, limit);
+}
