@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
+    "postinstall": "prisma generate",
     "start": "node scripts/bootstrap-db.mjs && next start",
     "db:bootstrap": "node scripts/bootstrap-db.mjs",
     "db:start": "pg_ctl -D .pgdata -l .pgdata/log -o \"-p 5544 -k /tmp\" start",
