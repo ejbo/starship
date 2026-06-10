@@ -51,7 +51,9 @@ function toProduct(p: DbProductWithReviews): Product {
     acquisitions: p.acquisitions,
     developer: p.developer,
     version: p.version ?? undefined,
-    entry: p.entryUrl ? { kind: "sandbox", url: p.entryUrl } : undefined,
+    entry: p.entryUrl
+      ? { kind: "sandbox", url: p.entryUrl, launchMode: p.launchMode === "newtab" ? "newtab" : "embedded" }
+      : undefined,
     price: p.priceCredits == null ? "free" : { credits: p.priceCredits },
     capabilities: p.capabilities,
     releasedAt: p.releasedAt,

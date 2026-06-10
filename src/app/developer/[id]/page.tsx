@@ -55,6 +55,7 @@ export default async function AppEditPage({
               tags: app.tags.join(", "),
               capabilities: app.capabilities.join(" "),
               entryUrl: app.entryUrl ?? "",
+              launchMode: app.launchMode,
               icon: app.icon,
               priceCredits: app.priceCredits?.toString() ?? "",
             }}

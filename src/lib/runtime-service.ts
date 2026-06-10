@@ -25,24 +25,48 @@ export interface ChatResult {
   reply: string;
   provider: string;
   via: string;
+  /** 需用户授权"用平台密钥"（首次询问）；host 弹授权框后重试 */
+  needsConsent?: boolean;
+  providerName?: string;
+}
+
+/** 用户授权某应用使用平台配置的密钥（记住，跨应用通用） */
+export async function grantGatewayConsent(slug: string): Promise<void> {
+  const userId = await getSessionUserId();
+  const product = await prisma.product.findUnique({ where: { slug }, select: { id: true } });
+  if (!product) return;
+  await prisma.gatewayConsent.upsert({
+    where: { userId_productId: { userId, productId: product.id } },
+    update: {},
+    create: { userId, productId: product.id, createdAt: new Date().toISOString() },
+  });
 }
 
 /**
  * SDK ai.chat：经平台 Gateway 真实代理（gateway-core）。
+ * 首次调用若用户未授权"用平台密钥"，返回 needsConsent，由 host 弹框询问。
  * 关键安全属性：服务端解密用户密钥用于调用，结果回传应用，应用全程接触不到明文 Key。
- * 演示密钥/网络失败优雅降级为提示文案，不抛给应用。
  */
 export async function sdkChat(slug: string, prompt: string): Promise<ChatResult> {
   const userId = await getSessionUserId();
   const product = await prisma.product.findUnique({
     where: { slug },
-    select: { capabilities: true },
+    select: { id: true, capabilities: true },
   });
   if (!product) throw new Error("应用不存在");
 
   // 取该应用声明的首个具体 LLM provider
   const provider =
     product.capabilities.map(capabilityProvider).find((p): p is string => Boolean(p)) ?? "anthropic";
+
+  // 授权检查：未同意"用平台密钥" → 让 host 询问
+  const consent = await prisma.gatewayConsent.findUnique({
+    where: { userId_productId: { userId, productId: product.id } },
+    select: { id: true },
+  });
+  if (!consent) {
+    return { reply: "", provider, via: "", needsConsent: true, providerName: providerMeta(provider).name };
+  }
 
   try {
     const res = await runGatewayChat({ userId, provider, prompt, productSlug: slug });

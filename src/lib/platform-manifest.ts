@@ -11,6 +11,7 @@ export const SCOPES: Record<string, string> = {
   identity: "读取用户公开资料（昵称、头像、等级）",
   "achievements:write": "为用户解锁该应用的成就",
   "stats:write": "记录用户在该应用的游戏时长与统计",
+  "gateway:llm": "用用户在平台配置的密钥经 Gateway 调用大模型（应用拿不到明文 Key）",
 };
 
 export interface EndpointParam {
@@ -94,6 +95,20 @@ export const ENDPOINTS: Endpoint[] = [
       { name: "stats", in: "body", type: "object", required: false, description: "自定义统计键值对" },
     ],
     responseExample: { ok: true },
+  },
+  {
+    id: "ai.chat",
+    method: "POST",
+    path: "/api/v1/ai/chat",
+    summary: "经平台 Gateway 用用户配置的密钥调用大模型（应用不接触明文 Key）",
+    auth: "bearer",
+    scope: "gateway:llm",
+    params: [
+      { name: "prompt", in: "body", type: "string", required: true, description: "提示词" },
+      { name: "provider", in: "body", type: "string", required: false, description: "anthropic|openai|… 留空用应用声明的默认 provider" },
+      { name: "model", in: "body", type: "string", required: false, description: "模型 id，留空用默认" },
+    ],
+    responseExample: { reply: "……", provider: "anthropic", model: "claude-3-5-haiku-latest", usage: { tokensIn: 12, tokensOut: 64 } },
   },
   {
     id: "stats.global",

@@ -118,6 +118,7 @@ export interface UpdateAppInput {
   tags: string[];
   capabilities: string[];
   entryUrl: string | null;
+  launchMode: string;
   icon: string;
   priceCredits: number | null;
 }
@@ -132,6 +133,7 @@ export async function updateApp(id: string, input: UpdateAppInput): Promise<void
       tags: input.tags,
       capabilities: input.capabilities,
       entryUrl: input.entryUrl,
+      launchMode: input.launchMode === "newtab" ? "newtab" : "embedded",
       icon: input.icon || "grid",
       priceCredits: input.priceCredits,
       updatedAt: new Date().toISOString().slice(0, 10),

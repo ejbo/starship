@@ -42,7 +42,7 @@ export interface Product {
   /** 当前上架版本（app 类型必填） */
   version?: string;
   /** 应用入口：平台沙箱加载的外部部署地址 */
-  entry?: { kind: "sandbox"; url: string };
+  entry?: { kind: "sandbox"; url: string; launchMode?: "embedded" | "newtab" };
   price: "free" | { credits: number };
   /** 运行环境声明，如 llm:claude / storage:1gb / social:friends */
   capabilities: string[];

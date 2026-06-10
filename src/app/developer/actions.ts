@@ -31,6 +31,7 @@ export async function updateAppAction(id: string, formData: FormData) {
     tags,
     capabilities,
     entryUrl: String(formData.get("entryUrl") ?? "").trim() || null,
+    launchMode: String(formData.get("launchMode") ?? "embedded"),
     icon: String(formData.get("icon") ?? "grid"),
     priceCredits: priceRaw ? Math.max(0, Number(priceRaw)) || null : null,
   });

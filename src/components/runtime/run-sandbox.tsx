@@ -1,14 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeftRight, ShieldCheck } from "lucide-react";
+import { ArrowLeftRight, KeyRound, ShieldCheck } from "lucide-react";
 import {
   chatAction,
+  grantConsentAction,
   identityAction,
   storageGetAction,
   storageSetAction,
   unlockAction,
 } from "@/app/run/[slug]/run-actions";
+
+interface ConsentReq {
+  providerName: string;
+  resolve: (ok: boolean) => void;
+}
 
 interface RpcMessage {
   source: string;
@@ -30,6 +36,7 @@ interface LogEntry {
 export function RunSandbox({ slug, entryUrl, appName }: { slug: string; entryUrl: string; appName: string }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
+  const [consent, setConsent] = useState<ConsentReq | null>(null);
 
   useEffect(() => {
     const append = (entry: LogEntry) => setLog((l) => [...l.slice(-30), entry]);
@@ -65,7 +72,23 @@ export function RunSandbox({ slug, entryUrl, appName }: { slug: string; entryUrl
             break;
           }
           case "ai.chat": {
-            const res = await chatAction(slug, params?.prompt ?? "");
+            let res = await chatAction(slug, params?.prompt ?? "");
+            // 首次：询问是否用平台密钥
+            if (res.needsConsent) {
+              append({ dir: "out", text: `← 请求授权使用平台 ${res.providerName} 密钥…` });
+              const ok = await new Promise<boolean>((resolve) =>
+                setConsent({ providerName: res.providerName ?? "平台", resolve }),
+              );
+              setConsent(null);
+              if (!ok) {
+                reply(id, null, "用户拒绝使用平台密钥");
+                append({ dir: "out", text: "← 用户拒绝授权" });
+                break;
+              }
+              await grantConsentAction(slug);
+              append({ dir: "out", text: "← 已授权，记住该应用" });
+              res = await chatAction(slug, params?.prompt ?? "");
+            }
             reply(id, res);
             append({ dir: "out", text: `← ai.chat via ${res.via}` });
             break;
@@ -102,7 +125,29 @@ export function RunSandbox({ slug, entryUrl, appName }: { slug: string; entryUrl
   }, [slug]);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+    <div className="relative grid gap-4 lg:grid-cols-[1fr_300px]">
+      {/* 平台密钥授权框（首次） */}
+      {consent && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center rounded-lg bg-ink/30 backdrop-blur-[2px]">
+          <div className="w-80 rounded-xl border border-line bg-panel p-5 shadow-[0_16px_50px_-12px_rgb(28_36_51/.35)]">
+            <KeyRound className="mb-2 size-6 text-accent" />
+            <h3 className="text-sm font-semibold">允许「{appName}」使用你的平台密钥？</h3>
+            <p className="mt-2 text-sm leading-relaxed text-dim">
+              该应用想用你在「API 配置中心」配置的 <b>{consent.providerName}</b> 密钥进行 AI 调用。
+              同意后会记住，<b>在所有应用间通用</b>，无需重复配置。密钥全程不出平台、应用接触不到明文。
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button onClick={() => consent.resolve(false)} className="flex-1 rounded-md border border-line py-2 text-sm text-dim transition-colors hover:bg-card-hi">
+                拒绝
+              </button>
+              <button onClick={() => consent.resolve(true)} className="flex-1 rounded-md bg-accent py-2 text-sm font-medium text-white transition-colors hover:bg-accent-deep">
+                允许并记住
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 应用画面（沙箱 iframe） */}
       <div className="overflow-hidden rounded-b-lg border border-t-0 border-line bg-white">
         <iframe

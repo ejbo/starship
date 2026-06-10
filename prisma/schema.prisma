@@ -120,8 +120,10 @@ model Product {
   acquisitions Int
   developer    String
   version      String?
-  /// 应用入口（沙箱加载的外部部署地址）
+  /// 应用入口（部署地址）
   entryUrl     String?
+  /// 运行方式：embedded 沙箱 iframe 内运行 / newtab 新标签页打开
+  launchMode   String   @default("embedded")
   /// null = 免费
   priceCredits Int?
   capabilities String[]
@@ -154,6 +156,16 @@ model Achievement {
   unlocks     AchievementUnlock[]
 
   @@unique([productId, key])
+}
+
+/// 用户授权某应用使用「平台配置的 API 密钥」（沙箱应用的 ai.chat 首次询问，记住后跨应用通用）
+model GatewayConsent {
+  id        String @id @default(cuid())
+  userId    String
+  productId String
+  createdAt String
+
+  @@unique([userId, productId])
 }
 
 model ReviewVote {

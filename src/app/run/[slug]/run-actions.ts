@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  grantGatewayConsent,
   sdkChat,
   sdkIdentity,
   sdkStorageGet,
@@ -9,6 +10,10 @@ import {
   type ChatResult,
   type SdkIdentity,
 } from "@/lib/runtime-service";
+
+export async function grantConsentAction(slug: string): Promise<void> {
+  return grantGatewayConsent(slug);
+}
 
 export async function identityAction(): Promise<SdkIdentity> {
   return sdkIdentity();

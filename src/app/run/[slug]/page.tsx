@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ChevronLeft, LogOut, ShieldCheck } from "lucide-react";
+import { ChevronLeft, ExternalLink, KeyRound, LogOut, ShieldCheck } from "lucide-react";
 import { RunSandbox } from "@/components/runtime/run-sandbox";
 import { CapsuleArt } from "@/components/ui/capsule-art";
 import { describeCapability, getBySlug } from "@/lib/catalog";
@@ -57,11 +57,36 @@ export default async function RunPage({ params }: { params: Promise<{ slug: stri
         </Link>
       </div>
 
-      <RunSandbox slug={product.slug} entryUrl={product.entry.url} appName={product.name} />
-
-      <p className="mt-3 text-center text-xs text-mute">
-        其他应用入口为外部部署地址（开发者独立部署），此处演示用同源参考应用 {product.entry.url}
-      </p>
+      {product.entry.launchMode === "newtab" ? (
+        <div className="flex min-h-[60vh] flex-col items-center justify-center gap-5 rounded-b-lg border border-t-0 border-line bg-card-hi/40 px-6 py-16 text-center">
+          <CapsuleArt art={product.art} ratio="square" className="w-20 rounded-2xl" iconClassName="size-1/2" />
+          <div className="max-w-md space-y-2">
+            <p className="text-lg font-semibold">{product.name}</p>
+            <p className="text-sm leading-relaxed text-dim">
+              这是一个独立 web 应用，将在<b>新标签页</b>中打开。它通过「使用平台密钥」授权，复用你在配置中心的模型密钥——换应用无需重配。
+            </p>
+          </div>
+          <a
+            href={product.entry.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-deep"
+          >
+            <ExternalLink className="size-4" /> 在新标签页打开应用
+          </a>
+          <p className="flex items-center gap-1.5 text-xs text-mute">
+            <KeyRound className="size-3.5" /> 应用经 OAuth 授权后调用平台 Gateway，密钥不出平台
+          </p>
+          <p className="text-[11px] text-mute">入口：{product.entry.url}</p>
+        </div>
+      ) : (
+        <>
+          <RunSandbox slug={product.slug} entryUrl={product.entry.url} appName={product.name} />
+          <p className="mt-3 text-center text-xs text-mute">
+            沙箱内运行，经 postMessage SDK 与平台通信；演示用同源参考应用 {product.entry.url}
+          </p>
+        </>
+      )}
     </main>
   );
 }
