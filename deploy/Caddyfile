@@ -1,0 +1,19 @@
+# Caddy 反向代理 + 自动 HTTPS（Let's Encrypt 自动签发，零配置）
+# 放到实例的 /etc/caddy/Caddyfile，把域名换成你的。
+# Caddy 会自动给你的域名申请并续期 HTTPS 证书。
+
+# 星港主应用（pnpm start 默认监听 3000）
+starport.你的域名.com {
+    encode gzip zstd
+    reverse_proxy localhost:3000
+}
+
+# multillm 接入应用（如果同机部署，监听 4000）
+multillm.你的域名.com {
+    encode gzip zstd
+    reverse_proxy localhost:4000
+}
+
+# 说明：
+# - Caddy 默认会带上 X-Forwarded-Proto: https，Next.js/iron-session 据此识别为安全连接，secure Cookie 正常工作。
+# - 仅用 IP 没域名时，HTTPS 无法自动签发；上线请用域名。
