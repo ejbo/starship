@@ -1,15 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
   ChevronDown,
   Copy,
-  GripHorizontal,
+  Download,
+  FileText,
+  ImageIcon,
+  Maximize2,
   MessageSquare,
+  Minus,
+  Paperclip,
   Search,
   Send,
+  Smile,
   UserMinus,
   UserPlus,
   Users,
@@ -26,7 +32,7 @@ import {
   sendMessageAction,
   setRemarkAction,
 } from "@/app/friends-actions";
-import type { ChatMessage } from "@/lib/message-service";
+import type { ChatMessage, MessageKind } from "@/lib/message-service";
 import type { FriendRequestView } from "@/lib/friends-service";
 import { cn } from "@/lib/cn";
 import type { Friend, PresenceKind } from "@/lib/types";
@@ -39,6 +45,11 @@ export interface Me {
   friendCode: string | null;
 }
 
+interface Conversation {
+  messages: ChatMessage[];
+  hasMore: boolean;
+}
+
 const presenceMeta: Record<PresenceKind, { dot: string; text: (d?: string) => string; tone: string }> = {
   online: { dot: "bg-accent", text: () => "在线", tone: "text-accent" },
   using: { dot: "bg-green", text: (d) => `正在使用 ${d}`, tone: "text-green" },
@@ -47,6 +58,8 @@ const presenceMeta: Record<PresenceKind, { dot: string; text: (d?: string) => st
 };
 
 const display = (f: Friend) => f.remark || f.name;
+
+const EMOJIS = "😀😄😁😆😉😊🙂😍😘😎🤔😐😴😭😡👍👎👌🙏👏💪🎉🔥✨💯❤️💔⭐🌟✅❌❓💡📌🚀☕🍻🐶🐱".match(/./gu) ?? [];
 
 // —— 时间/分组 ——
 const timeLabel = (iso: string) => {
@@ -63,7 +76,7 @@ function dayLabel(iso: string) {
   return `${d.getMonth() + 1} 月 ${d.getDate()} 日`;
 }
 function groupByDayAndSender(messages: ChatMessage[]) {
-  const days: { day: string; groups: { from: "me" | "friend"; start: string; items: string[] }[] }[] = [];
+  const days: { day: string; groups: { from: "me" | "friend"; start: string; items: ChatMessage[] }[] }[] = [];
   for (const m of messages) {
     const day = dayLabel(m.at);
     let bucket = days[days.length - 1];
@@ -72,10 +85,45 @@ function groupByDayAndSender(messages: ChatMessage[]) {
       days.push(bucket);
     }
     const last = bucket.groups[bucket.groups.length - 1];
-    if (last && last.from === m.from) last.items.push(m.body);
-    else bucket.groups.push({ from: m.from, start: m.at, items: [m.body] });
+    if (last && last.from === m.from) last.items.push(m);
+    else bucket.groups.push({ from: m.from, start: m.at, items: [m] });
   }
   return days;
+}
+
+/** 把图片压缩成较小的 JPEG dataURL */
+function imageToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const max = 1280;
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return reject(new Error("无法处理图片"));
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", 0.82));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("图片读取失败"));
+    };
+    img.src = url;
+  });
+}
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("文件读取失败"));
+    reader.readAsDataURL(file);
+  });
 }
 
 interface ContextMenuState {
@@ -89,6 +137,8 @@ interface Toast {
   body: string;
   handle: string;
 }
+
+const DOCK_KEY = "starport_dock_state";
 
 export function SocialLayer({
   me,
@@ -107,15 +157,43 @@ export function SocialLayer({
 
   const [openChats, setOpenChats] = useState<string[]>([]);
   const [activeChat, setActiveChat] = useState<string | null>(null);
-  const [conversations, setConversations] = useState<Record<string, ChatMessage[]>>({});
+  const [conversations, setConversations] = useState<Record<string, Conversation>>({});
   const [unread, setUnread] = useState<Record<string, number>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const [minimized, setMinimized] = useState(false);
+  const [maximized, setMaximized] = useState(false);
+  const [restored, setRestored] = useState(false);
 
   const activeChatRef = useRef<string | null>(null);
   activeChatRef.current = activeChat;
-  const friendsRef = useRef(friends);
-  friendsRef.current = friends;
+
+  // —— 恢复坞/会话开关状态（跨刷新保留） ——
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DOCK_KEY);
+      if (raw) {
+        const s = JSON.parse(raw);
+        if (s.dockOpen) setDockOpen(true);
+        if (Array.isArray(s.openChats)) setOpenChats(s.openChats);
+        if (s.activeChat) setActiveChat(s.activeChat);
+        if (s.minimized) setMinimized(true);
+      }
+    } catch {
+      /* ignore */
+    }
+    setRestored(true);
+  }, []);
+
+  // —— 持久化坞/会话开关状态 ——
+  useEffect(() => {
+    if (!restored) return;
+    try {
+      localStorage.setItem(DOCK_KEY, JSON.stringify({ dockOpen, openChats, activeChat, minimized }));
+    } catch {
+      /* ignore */
+    }
+  }, [restored, dockOpen, openChats, activeChat, minimized]);
 
   const refresh = useCallback(async () => {
     const res = await refreshSocialAction();
@@ -124,18 +202,45 @@ export function SocialLayer({
   }, []);
 
   const loadedRef = useRef<Set<string>>(new Set());
-  const openChat = useCallback(async (handle: string) => {
-    setOpenChats((cur) => (cur.includes(handle) ? cur : [...cur, handle]));
-    setActiveChat(handle);
-    setUnread((u) => ({ ...u, [handle]: 0 }));
-    // 副作用放在更新函数之外，避免「渲染时更新组件」告警
-    if (!loadedRef.current.has(handle)) {
-      loadedRef.current.add(handle);
-      setConversations((c) => (c[handle] ? c : { ...c, [handle]: [] }));
-      const msgs = await loadConversationAction(handle);
-      setConversations((c) => ({ ...c, [handle]: msgs }));
-    }
+  const ensureLoaded = useCallback(async (handle: string) => {
+    if (loadedRef.current.has(handle)) return;
+    loadedRef.current.add(handle);
+    setConversations((c) => (c[handle] ? c : { ...c, [handle]: { messages: [], hasMore: false } }));
+    const page = await loadConversationAction(handle);
+    setConversations((c) => ({ ...c, [handle]: { messages: page.messages, hasMore: page.hasMore } }));
   }, []);
+
+  const openChat = useCallback(
+    async (handle: string) => {
+      setOpenChats((cur) => (cur.includes(handle) ? cur : [...cur, handle]));
+      setActiveChat(handle);
+      setMinimized(false);
+      setUnread((u) => ({ ...u, [handle]: 0 }));
+      await ensureLoaded(handle);
+    },
+    [ensureLoaded],
+  );
+
+  // 恢复时若有打开的会话，预加载它们的消息
+  useEffect(() => {
+    if (!restored) return;
+    openChats.forEach((h) => void ensureLoaded(h));
+  }, [restored, openChats, ensureLoaded]);
+
+  const loadOlder = useCallback(async (handle: string) => {
+    const conv = conversationsRef.current[handle];
+    if (!conv || !conv.hasMore || conv.messages.length === 0) return false;
+    const oldest = conv.messages[0].at;
+    const page = await loadConversationAction(handle, oldest);
+    setConversations((c) => {
+      const prev = c[handle];
+      if (!prev) return c;
+      return { ...c, [handle]: { messages: [...page.messages, ...prev.messages], hasMore: page.hasMore } };
+    });
+    return true;
+  }, []);
+  const conversationsRef = useRef(conversations);
+  conversationsRef.current = conversations;
 
   const closeChat = useCallback((handle: string) => {
     setOpenChats((cur) => {
@@ -143,6 +248,13 @@ export function SocialLayer({
       setActiveChat((a) => (a === handle ? next[next.length - 1] ?? null : a));
       return next;
     });
+  }, []);
+
+  const closeWindow = useCallback(() => {
+    setOpenChats([]);
+    setActiveChat(null);
+    setMinimized(false);
+    setMaximized(false);
   }, []);
 
   // —— 轮询：新消息 + 好友/请求/在线状态（每 2s） ——
@@ -159,17 +271,26 @@ export function SocialLayer({
         setRequests(res.requests);
         for (const m of res.messages) {
           const conv = m.from;
-          const msg: ChatMessage = { from: "friend", body: m.body, at: m.at };
-          setConversations((c) => (c[conv] ? { ...c, [conv]: [...c[conv], msg] } : c));
+          const msg: ChatMessage = {
+            id: m.id,
+            from: "friend",
+            kind: m.kind,
+            body: m.body,
+            attachmentUrl: m.attachmentUrl,
+            attachmentName: m.attachmentName,
+            at: m.at,
+          };
+          setConversations((c) => (c[conv] ? { ...c, [conv]: { ...c[conv], messages: [...c[conv].messages, msg] } } : c));
           if (activeChatRef.current !== conv) {
             setUnread((u) => ({ ...u, [conv]: (u[conv] ?? 0) + 1 }));
+            const preview = m.kind === "image" ? "[图片]" : m.kind === "file" ? `[文件] ${m.attachmentName ?? ""}` : m.body;
             const id = Date.now() + Math.floor(performance.now());
-            setToasts((t) => [...t, { id, fromName: m.fromName, body: m.body, handle: conv }]);
+            setToasts((t) => [...t, { id, fromName: m.fromName, body: preview, handle: conv }]);
             setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
           }
         }
       } catch {
-        /* 网络抖动，下次再试 */
+        /* 网络抖动 */
       } finally {
         if (alive) timer = setTimeout(tick, 2000);
       }
@@ -193,10 +314,21 @@ export function SocialLayer({
     };
   }, [menu]);
 
-  const sendChat = useCallback(async (handle: string, body: string) => {
-    const optimistic: ChatMessage = { from: "me", body, at: new Date().toISOString() };
-    setConversations((c) => ({ ...c, [handle]: [...(c[handle] ?? []), optimistic] }));
-    await sendMessageAction(handle, body);
+  const sendChat = useCallback(async (handle: string, body: string, input?: { kind: MessageKind; attachmentUrl?: string; attachmentName?: string }) => {
+    const optimistic: ChatMessage = {
+      id: `tmp-${Date.now()}-${Math.random()}`,
+      from: "me",
+      kind: input?.kind ?? "text",
+      body,
+      attachmentUrl: input?.attachmentUrl ?? null,
+      attachmentName: input?.attachmentName ?? null,
+      at: new Date().toISOString(),
+    };
+    setConversations((c) => {
+      const prev = c[handle] ?? { messages: [], hasMore: false };
+      return { ...c, [handle]: { ...prev, messages: [...prev.messages, optimistic] } };
+    });
+    await sendMessageAction(handle, body, input ? { kind: input.kind, attachmentUrl: input.attachmentUrl, attachmentName: input.attachmentName } : undefined);
   }, []);
 
   const onContextMenu = useCallback((e: React.MouseEvent, friend: Friend) => {
@@ -209,7 +341,6 @@ export function SocialLayer({
 
   return (
     <>
-      {/* 多窗口 tab 聊天 */}
       <ChatWindows
         me={me}
         friends={friends}
@@ -217,15 +348,21 @@ export function SocialLayer({
         activeChat={activeChat}
         conversations={conversations}
         unread={unread}
+        minimized={minimized}
+        maximized={maximized}
         onActivate={(h) => {
           setActiveChat(h);
+          setMinimized(false);
           setUnread((u) => ({ ...u, [h]: 0 }));
         }}
-        onClose={closeChat}
+        onCloseTab={closeChat}
+        onCloseWindow={closeWindow}
+        onMinimize={() => setMinimized((m) => !m)}
+        onMaximize={() => setMaximized((m) => !m)}
         onSend={sendChat}
+        onLoadOlder={loadOlder}
       />
 
-      {/* 好友坞 */}
       <div className="fixed right-4 bottom-4 z-50 flex flex-col items-end gap-2">
         {/* 消息提醒 toast */}
         <div className="flex flex-col items-end gap-2">
@@ -240,7 +377,7 @@ export function SocialLayer({
                   openChat(t.handle);
                   setToasts((cur) => cur.filter((x) => x.id !== t.id));
                 }}
-                className="flex w-64 items-start gap-2.5 rounded-lg border border-line bg-panel p-3 text-left shadow-[0_12px_40px_-12px_rgb(28_36_51/.3)]"
+                className="flex w-64 items-start gap-2.5 rounded-xl border border-line bg-panel p-3 text-left shadow-[0_12px_40px_-12px_rgb(28_36_51/.3)]"
               >
                 <MessageSquare className="mt-0.5 size-4 shrink-0 text-accent" />
                 <span className="min-w-0">
@@ -259,7 +396,7 @@ export function SocialLayer({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
               transition={{ duration: 0.16, ease: "easeOut" }}
-              className="flex h-[28rem] w-[21rem] flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-[0_12px_40px_-12px_rgb(28_36_51/.25)]"
+              className="flex h-[28rem] w-[21rem] flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-[0_12px_40px_-12px_rgb(28_36_51/.25)]"
             >
               {view === "add" ? (
                 <AddFriendView
@@ -295,7 +432,7 @@ export function SocialLayer({
             setDockOpen((o) => !o);
           }}
           className={cn(
-            "relative flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-medium shadow-[0_4px_16px_-6px_rgb(28_36_51/.2)] transition-colors",
+            "relative flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium shadow-[0_4px_16px_-6px_rgb(28_36_51/.2)] transition-colors",
             dockOpen ? "border-accent bg-accent text-white" : "border-line bg-panel text-ink hover:border-accent/50",
           )}
         >
@@ -312,7 +449,6 @@ export function SocialLayer({
         </button>
       </div>
 
-      {/* 右键菜单 */}
       {menu && (
         <FriendContextMenu
           state={menu}
@@ -354,9 +490,9 @@ function FriendRow({
   return (
     <button
       onDoubleClick={() => onOpenChat(friend.handle)}
-      onClick={() => onOpenChat(friend.handle)}
       onContextMenu={(e) => onContextMenu(e, friend)}
-      className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-card-hi"
+      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-card-hi"
+      title="双击聊天 · 右键更多"
     >
       <span className="relative">
         <Avatar name={display(friend)} hue={friend.avatarHue} src={friend.avatarUrl} size="sm" className={cn(offline && "opacity-45")} />
@@ -439,7 +575,7 @@ function FriendsPanel({
           </button>
         </div>
         <div className="ml-auto flex items-center gap-0.5">
-          <button onClick={onAdd} className="relative rounded p-1.5 text-dim transition-colors hover:bg-card-hi hover:text-ink" aria-label="添加好友" title="添加好友">
+          <button onClick={onAdd} className="relative rounded-lg p-1.5 text-dim transition-colors hover:bg-card-hi hover:text-ink" aria-label="添加好友" title="添加好友">
             <UserPlus className="size-4" />
             {requestCount > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-danger text-[9px] font-bold text-white">
@@ -447,14 +583,14 @@ function FriendsPanel({
               </span>
             )}
           </button>
-          <button onClick={onClose} className="rounded p-1.5 text-dim transition-colors hover:bg-card-hi hover:text-ink" aria-label="关闭">
+          <button onClick={onClose} className="rounded-lg p-1.5 text-dim transition-colors hover:bg-card-hi hover:text-ink" aria-label="关闭">
             <X className="size-4" />
           </button>
         </div>
       </div>
 
       <div className="border-b border-line px-3 py-2">
-        <label className="flex items-center gap-2 rounded-md border border-line bg-page px-2.5 py-1.5 text-sm text-mute focus-within:border-accent">
+        <label className="flex items-center gap-2 rounded-lg border border-line bg-page px-2.5 py-1.5 text-sm text-mute focus-within:border-accent">
           <Search className="size-3.5" />
           <input
             value={query}
@@ -512,14 +648,14 @@ function AddFriendView({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
-        <button onClick={onBack} className="rounded p-1 text-dim transition-colors hover:bg-card-hi hover:text-ink" aria-label="返回">
+        <button onClick={onBack} className="rounded-lg p-1 text-dim transition-colors hover:bg-card-hi hover:text-ink" aria-label="返回">
           <X className="size-4" />
         </button>
         <p className="text-sm font-medium">添加好友</p>
       </div>
       <div className="grow space-y-4 overflow-y-auto p-3">
         {myCode && (
-          <div className="rounded-md border border-line bg-card-hi p-2.5">
+          <div className="rounded-lg border border-line bg-card-hi p-2.5">
             <p className="text-[11px] text-mute">你的好友码（分享给别人加你）</p>
             <div className="mt-1 flex items-center gap-2">
               <code className="grow font-mono text-sm font-semibold text-accent">{myCode}</code>
@@ -544,9 +680,9 @@ function AddFriendView({
               onChange={(e) => setHandle(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submit()}
               placeholder="对方的好友码或用户名"
-              className="grow rounded-md border border-line bg-page px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+              className="grow rounded-lg border border-line bg-page px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
             />
-            <button onClick={submit} className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-accent-deep">
+            <button onClick={submit} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-accent-deep">
               添加
             </button>
           </div>
@@ -565,7 +701,7 @@ function AddFriendView({
                       await onAccept(req.edgeId);
                       setPendingReqs((r) => r.filter((x) => x.edgeId !== req.edgeId));
                     }}
-                    className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-accent-deep"
+                    className="flex items-center gap-1 rounded-lg bg-accent px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-accent-deep"
                   >
                     <Check className="size-3" /> 接受
                   </button>
@@ -599,12 +735,11 @@ function FriendContextMenu({
     { label: "设置备注", icon: Copy, run: onRemark },
     { label: "删除好友", icon: UserMinus, run: onRemove, danger: true },
   ];
-  // 防止超出右边界
   const left = Math.min(state.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 180);
   const top = Math.min(state.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 180);
   return (
     <div
-      className="fixed z-[60] w-44 overflow-hidden rounded-lg border border-line bg-panel py-1 shadow-[0_12px_40px_-12px_rgb(28_36_51/.35)]"
+      className="fixed z-[60] w-44 overflow-hidden rounded-xl border border-line bg-panel py-1 shadow-[0_12px_40px_-12px_rgb(28_36_51/.35)]"
       style={{ left, top }}
       onClick={(e) => e.stopPropagation()}
     >
@@ -628,6 +763,32 @@ function FriendContextMenu({
   );
 }
 
+// ———————————————————— 消息气泡内容 ————————————————————
+function MessageBody({ msg }: { msg: ChatMessage }) {
+  if (msg.kind === "image" && msg.attachmentUrl) {
+    return (
+      <a href={msg.attachmentUrl} target="_blank" rel="noreferrer" className="mt-1 block">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={msg.attachmentUrl} alt="图片" className="max-h-48 max-w-full rounded-lg border border-line object-cover" />
+      </a>
+    );
+  }
+  if (msg.kind === "file" && msg.attachmentUrl) {
+    return (
+      <a
+        href={msg.attachmentUrl}
+        download={msg.attachmentName ?? "file"}
+        className="mt-1 flex max-w-[12rem] items-center gap-2 rounded-lg border border-line bg-card-hi px-2.5 py-2 text-xs transition-colors hover:border-accent/40"
+      >
+        <FileText className="size-5 shrink-0 text-accent" />
+        <span className="min-w-0 grow truncate">{msg.attachmentName ?? "文件"}</span>
+        <Download className="size-3.5 shrink-0 text-mute" />
+      </a>
+    );
+  }
+  return <p className="text-sm leading-relaxed text-ink/90">{msg.body}</p>;
+}
+
 // ———————————————————— 多窗口 tab 聊天 ————————————————————
 function ChatWindows({
   me,
@@ -636,37 +797,59 @@ function ChatWindows({
   activeChat,
   conversations,
   unread,
+  minimized,
+  maximized,
   onActivate,
-  onClose,
+  onCloseTab,
+  onCloseWindow,
+  onMinimize,
+  onMaximize,
   onSend,
+  onLoadOlder,
 }: {
   me: Me;
   friends: Friend[];
   openChats: string[];
   activeChat: string | null;
-  conversations: Record<string, ChatMessage[]>;
+  conversations: Record<string, Conversation>;
   unread: Record<string, number>;
+  minimized: boolean;
+  maximized: boolean;
   onActivate: (h: string) => void;
-  onClose: (h: string) => void;
-  onSend: (h: string, body: string) => void;
+  onCloseTab: (h: string) => void;
+  onCloseWindow: () => void;
+  onMinimize: () => void;
+  onMaximize: () => void;
+  onSend: (h: string, body: string, input?: { kind: MessageKind; attachmentUrl?: string; attachmentName?: string }) => void;
+  onLoadOlder: (h: string) => Promise<boolean>;
 }) {
-  const W = 320;
-  const H = 416;
+  const NORMAL = { w: 340, h: 468 };
   const [draft, setDraft] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const posRef = useRef(pos);
   posRef.current = pos;
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const atBottomRef = useRef(true);
+  const loadingOlderRef = useRef(false);
+  const prevHeightRef = useRef(0);
+  const imgInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const friendOf = (h: string) => friends.find((f) => f.handle === h);
   const active = activeChat ? friendOf(activeChat) : null;
-  const messages = activeChat ? conversations[activeChat] ?? [] : [];
+  const conv = activeChat ? conversations[activeChat] : undefined;
+  const messages = conv?.messages ?? [];
+  const dims = maximized
+    ? { w: Math.min(580, typeof window !== "undefined" ? window.innerWidth - 32 : 580), h: Math.min(720, typeof window !== "undefined" ? window.innerHeight - 32 : 720) }
+    : NORMAL;
 
   // 初始位置：localStorage 记忆 > 居中
   useEffect(() => {
     const clamp = (p: { x: number; y: number }) => ({
-      x: Math.min(Math.max(8, p.x), window.innerWidth - W - 8),
-      y: Math.min(Math.max(8, p.y), window.innerHeight - H - 8),
+      x: Math.min(Math.max(8, p.x), window.innerWidth - NORMAL.w - 8),
+      y: Math.min(Math.max(8, p.y), window.innerHeight - NORMAL.h - 8),
     });
     try {
       const saved = localStorage.getItem("starport_chat_pos");
@@ -677,23 +860,40 @@ function ChatWindows({
     } catch {
       /* ignore */
     }
-    setPos(clamp({ x: (window.innerWidth - W) / 2, y: (window.innerHeight - H) / 2 }));
+    setPos(clamp({ x: (window.innerWidth - NORMAL.w) / 2, y: (window.innerHeight - NORMAL.h) / 2 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 切换会话 → 滚到底
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, activeChat]);
+    atBottomRef.current = true;
+    requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }));
+  }, [activeChat]);
+
+  // 消息变化：加载历史时维持位置，否则（在底部时）滚到底
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (loadingOlderRef.current) {
+      el.scrollTop = el.scrollHeight - prevHeightRef.current;
+      loadingOlderRef.current = false;
+    } else if (atBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages]);
 
   if (openChats.length === 0 || !pos) return null;
 
   const onDragStart = (e: React.PointerEvent) => {
+    if (maximized) return;
+    // 只有点在拖动区（非按钮）才拖
     dragRef.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
   };
   const onDragMove = (e: React.PointerEvent) => {
     if (!dragRef.current) return;
-    const x = Math.min(Math.max(8, e.clientX - dragRef.current.dx), window.innerWidth - W - 8);
-    const y = Math.min(Math.max(8, e.clientY - dragRef.current.dy), window.innerHeight - H - 8);
+    const x = Math.min(Math.max(8, e.clientX - dragRef.current.dx), window.innerWidth - dims.w - 8);
+    const y = Math.min(Math.max(8, e.clientY - dragRef.current.dy), window.innerHeight - dims.h - 8);
     setPos({ x, y });
   };
   const onDragEnd = () => {
@@ -707,69 +907,117 @@ function ChatWindows({
     dragRef.current = null;
   };
 
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    if (el.scrollTop < 60 && conv?.hasMore && !loadingOlderRef.current && activeChat) {
+      loadingOlderRef.current = true;
+      prevHeightRef.current = el.scrollHeight;
+      onLoadOlder(activeChat).then((ok) => {
+        if (!ok) loadingOlderRef.current = false;
+      });
+    }
+  };
+
   const send = () => {
     const body = draft.trim();
     if (!body || !activeChat) return;
     setDraft("");
+    atBottomRef.current = true;
     onSend(activeChat, body);
   };
 
+  const sendImage = async (file: File) => {
+    if (!activeChat) return;
+    try {
+      const dataUrl = await imageToDataUrl(file);
+      atBottomRef.current = true;
+      onSend(activeChat, "", { kind: "image", attachmentUrl: dataUrl });
+    } catch {
+      /* ignore */
+    }
+  };
+  const sendFile = async (file: File) => {
+    if (!activeChat) return;
+    if (file.size > 2_000_000) {
+      alert("文件过大（上限 2MB）");
+      return;
+    }
+    const dataUrl = await fileToDataUrl(file);
+    atBottomRef.current = true;
+    onSend(activeChat, file.name, { kind: "file", attachmentUrl: dataUrl, attachmentName: file.name });
+  };
+
   const grouped = groupByDayAndSender(messages);
+  const winStyle = maximized
+    ? { left: Math.max(16, (typeof window !== "undefined" ? window.innerWidth : 0) - dims.w - 24), top: 24, width: dims.w, height: dims.h }
+    : { left: pos.x, top: pos.y, width: dims.w, height: minimized ? "auto" : dims.h };
 
   return (
     <div
-      className="fixed z-40 flex flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-[0_12px_40px_-12px_rgb(28_36_51/.3)]"
-      style={{ left: pos.x, top: pos.y, width: W, height: H }}
+      className="fixed z-40 flex flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-[0_16px_50px_-12px_rgb(28_36_51/.32)]"
+      style={winStyle}
     >
-      {/* 拖动条 */}
+      {/* tab 栏（同时是拖动手柄 + 窗口控制） */}
       <div
         onPointerDown={onDragStart}
         onPointerMove={onDragMove}
         onPointerUp={onDragEnd}
-        className="flex h-5 cursor-move touch-none items-center justify-center border-b border-line bg-card-hi text-mute hover:text-dim"
-        title="拖动移动窗口"
+        className={cn("flex touch-none items-stretch border-b border-line bg-card-hi", !maximized && "cursor-move")}
       >
-        <GripHorizontal className="size-3.5" />
-      </div>
-      {/* tab 栏 */}
-      <div className="flex items-stretch gap-px overflow-x-auto border-b border-line bg-card-hi">
-        {openChats.map((h) => {
-          const f = friendOf(h);
-          if (!f) return null;
-          const isActive = h === activeChat;
-          return (
-            <div
-              key={h}
-              onClick={() => onActivate(h)}
-              className={cn(
-                "group flex max-w-[8rem] cursor-pointer items-center gap-1.5 px-2.5 py-2 text-xs transition-colors",
-                isActive ? "bg-panel font-medium text-ink" : "text-dim hover:bg-panel/60",
-              )}
-            >
-              <span className="relative">
-                <Avatar name={display(f)} hue={f.avatarHue} src={f.avatarUrl} size="xs" />
-                {(unread[h] ?? 0) > 0 && !isActive && (
-                  <span className="absolute -right-1 -top-1 size-2 rounded-full bg-danger" />
+        <div className="flex grow items-stretch gap-px overflow-x-auto">
+          {openChats.map((h) => {
+            const f = friendOf(h);
+            if (!f) return null;
+            const isActive = h === activeChat;
+            return (
+              <div
+                key={h}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => onActivate(h)}
+                className={cn(
+                  "group flex max-w-[8rem] cursor-pointer items-center gap-1.5 px-2.5 py-2 text-xs transition-colors",
+                  isActive ? "bg-panel font-medium text-ink" : "text-dim hover:bg-panel/60",
                 )}
-              </span>
-              <span className="truncate">{display(f)}</span>
-              <span
-                role="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onClose(h);
-                }}
-                className="rounded p-0.5 text-mute opacity-0 transition-opacity hover:bg-card-hi hover:text-ink group-hover:opacity-100"
               >
-                <X className="size-3" />
-              </span>
-            </div>
-          );
-        })}
+                <span className="relative">
+                  <Avatar name={display(f)} hue={f.avatarHue} src={f.avatarUrl} size="xs" />
+                  {(unread[h] ?? 0) > 0 && !isActive && <span className="absolute -right-1 -top-1 size-2 rounded-full bg-danger" />}
+                </span>
+                <span className="truncate">{display(f)}</span>
+                <span
+                  role="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCloseTab(h);
+                  }}
+                  className="rounded p-0.5 text-mute opacity-0 transition-opacity hover:bg-card-hi hover:text-ink group-hover:opacity-100"
+                >
+                  <X className="size-3" />
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        {/* 窗口控制 */}
+        <div className="flex items-center gap-0.5 px-1" onPointerDown={(e) => e.stopPropagation()}>
+          <button onClick={onMinimize} className="rounded p-1.5 text-mute transition-colors hover:bg-panel hover:text-ink" title="最小化" aria-label="最小化">
+            <Minus className="size-3.5" />
+          </button>
+          <button onClick={onMaximize} className="rounded p-1.5 text-mute transition-colors hover:bg-panel hover:text-ink" title={maximized ? "还原" : "放大"} aria-label="放大">
+            <Maximize2 className="size-3.5" />
+          </button>
+          <button onClick={onCloseWindow} className="rounded p-1.5 text-mute transition-colors hover:bg-danger/10 hover:text-danger" title="关闭" aria-label="关闭">
+            <X className="size-3.5" />
+          </button>
+        </div>
       </div>
 
-      {active && (
+      {!minimized && active && (
         <>
+          {/* 对话头 */}
           <div className="flex items-center gap-2 border-b border-line px-3 py-2">
             <span className="relative">
               <Avatar name={display(active)} hue={active.avatarHue} src={active.avatarUrl} size="sm" />
@@ -783,7 +1031,9 @@ function ChatWindows({
             </div>
           </div>
 
-          <div ref={scrollRef} className="grow space-y-1 overflow-y-auto px-3 py-3">
+          {/* 消息区 */}
+          <div ref={scrollRef} onScroll={onScroll} className="grow space-y-1 overflow-y-auto bg-page/40 px-3 py-3">
+            {conv?.hasMore && <p className="py-1 text-center text-[10px] text-mute">上滑加载更早的消息…</p>}
             {messages.length === 0 ? (
               <p className="pt-8 text-center text-xs text-mute">还没有聊天记录，打个招呼吧</p>
             ) : (
@@ -810,9 +1060,9 @@ function ChatWindows({
                             <span className="text-xs font-semibold">{mine ? me.name : display(active)}</span>
                             <span className="text-[10px] text-mute">{timeLabel(g.start)}</span>
                           </p>
-                          <div className="mt-1 space-y-0.5">
-                            {g.items.map((body, i) => (
-                              <p key={i} className="text-sm leading-relaxed text-ink/90">{body}</p>
+                          <div className="mt-1 space-y-1">
+                            {g.items.map((m) => (
+                              <MessageBody key={m.id} msg={m} />
                             ))}
                           </div>
                         </div>
@@ -824,17 +1074,49 @@ function ChatWindows({
             )}
           </div>
 
-          <div className="flex items-center gap-2 border-t border-line p-2.5">
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && send()}
-              placeholder={`发消息给 ${display(active)}`}
-              className="grow rounded-md border border-line bg-page px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-            />
-            <button onClick={send} disabled={!draft.trim()} className="rounded-md bg-accent p-2 text-white transition-colors hover:bg-accent-deep disabled:opacity-40" aria-label="发送">
-              <Send className="size-3.5" />
-            </button>
+          {/* 输入区 */}
+          <div className="relative border-t border-line p-2">
+            {emojiOpen && (
+              <div className="absolute bottom-full left-2 mb-1 grid w-64 grid-cols-8 gap-0.5 rounded-xl border border-line bg-panel p-2 shadow-[0_12px_40px_-12px_rgb(28_36_51/.3)]">
+                {EMOJIS.map((em) => (
+                  <button
+                    key={em}
+                    onClick={() => {
+                      setDraft((d) => d + em);
+                      setEmojiOpen(false);
+                    }}
+                    className="rounded p-1 text-lg transition-colors hover:bg-card-hi"
+                  >
+                    {em}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="mb-1.5 flex items-center gap-0.5">
+              <button onClick={() => setEmojiOpen((o) => !o)} className="rounded-lg p-1.5 text-mute transition-colors hover:bg-card-hi hover:text-ink" title="表情" aria-label="表情">
+                <Smile className="size-4" />
+              </button>
+              <button onClick={() => imgInputRef.current?.click()} className="rounded-lg p-1.5 text-mute transition-colors hover:bg-card-hi hover:text-ink" title="图片" aria-label="图片">
+                <ImageIcon className="size-4" />
+              </button>
+              <button onClick={() => fileInputRef.current?.click()} className="rounded-lg p-1.5 text-mute transition-colors hover:bg-card-hi hover:text-ink" title="文件" aria-label="文件">
+                <Paperclip className="size-4" />
+              </button>
+              <input ref={imgInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) sendImage(f); e.target.value = ""; }} />
+              <input ref={fileInputRef} type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) sendFile(f); e.target.value = ""; }} />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && send()}
+                placeholder={`发消息给 ${display(active)}`}
+                className="grow rounded-lg border border-line bg-page px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+              />
+              <button onClick={send} disabled={!draft.trim()} className="rounded-lg bg-accent p-2 text-white transition-colors hover:bg-accent-deep disabled:opacity-40" aria-label="发送">
+                <Send className="size-3.5" />
+              </button>
+            </div>
           </div>
         </>
       )}

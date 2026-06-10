@@ -69,13 +69,19 @@ model Message {
   fromId String
   toId   String
   body   String
+  /// text | image | file
+  kind   String  @default("text")
+  /// 图片/文档的 dataURL（压缩后）
+  attachmentUrl  String?
+  /// 文档原始文件名
+  attachmentName String?
   /// ISO 字符串
   at     String
   read   Boolean @default(false)
   from   User    @relation("MsgFrom", fields: [fromId], references: [id], onDelete: Cascade)
   to     User    @relation("MsgTo", fields: [toId], references: [id], onDelete: Cascade)
 
-  @@index([fromId, toId])
+  @@index([fromId, toId, at])
 }
 
 model FriendEdge {

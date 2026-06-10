@@ -2,17 +2,119 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { getSessionUserId } from "@/lib/session";
 
+export type MessageKind = "text" | "image" | "file";
+
 export interface ChatMessage {
+  id: string;
   from: "me" | "friend";
+  kind: MessageKind;
   body: string;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
   at: string;
 }
 
+export interface ConversationPage {
+  messages: ChatMessage[];
+  /** 是否还有更早的历史可加载 */
+  hasMore: boolean;
+}
+
 export interface IncomingMessage {
+  id: string;
   from: string; // 发送者 handle
   fromName: string;
+  kind: MessageKind;
   body: string;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
   at: string;
+}
+
+const PAGE_SIZE = 25;
+const MAX_ATTACHMENT = 3_000_000; // dataURL 上限（约 2.2MB 原始）
+
+/**
+ * 取与某好友的会话「一页」。
+ * - beforeIso 为空：取最新一页；
+ * - beforeIso 有值：取早于它的更老一页（上滑加载历史）。
+ * 返回按时间升序，外加 hasMore。
+ */
+export async function getConversationPage(handle: string, beforeIso?: string): Promise<ConversationPage> {
+  const userId = await getSessionUserId();
+  const other = await prisma.user.findUnique({ where: { handle }, select: { id: true } });
+  if (!other) return { messages: [], hasMore: false };
+
+  const rows = await prisma.message.findMany({
+    where: {
+      OR: [
+        { fromId: userId, toId: other.id },
+        { fromId: other.id, toId: userId },
+      ],
+      ...(beforeIso ? { at: { lt: beforeIso } } : {}),
+    },
+    orderBy: { at: "desc" }, // 先按倒序取最近的
+    take: PAGE_SIZE + 1, // 多取一条判断 hasMore
+    select: { id: true, fromId: true, kind: true, body: true, attachmentUrl: true, attachmentName: true, at: true },
+  });
+
+  const hasMore = rows.length > PAGE_SIZE;
+  const page = rows.slice(0, PAGE_SIZE).reverse(); // 截断后翻成升序
+  return {
+    hasMore,
+    messages: page.map((m) => ({
+      id: m.id,
+      from: m.fromId === userId ? "me" : "friend",
+      kind: m.kind as MessageKind,
+      body: m.body,
+      attachmentUrl: m.attachmentUrl,
+      attachmentName: m.attachmentName,
+      at: m.at,
+    })),
+  };
+}
+
+export interface SendInput {
+  kind?: MessageKind;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
+}
+
+export async function sendMessage(handle: string, body: string, input: SendInput = {}): Promise<ChatMessage> {
+  const userId = await getSessionUserId();
+  const kind = input.kind ?? "text";
+  const clean = body.trim();
+  if (kind === "text" && !clean) throw new Error("消息不能为空");
+  if (input.attachmentUrl) {
+    if (!/^data:/.test(input.attachmentUrl)) throw new Error("附件格式非法");
+    if (input.attachmentUrl.length > MAX_ATTACHMENT) throw new Error("附件过大（上限约 2MB）");
+  }
+
+  const other = await prisma.user.findUnique({ where: { handle }, select: { id: true } });
+  if (!other) throw new Error("用户不存在");
+
+  const at = new Date().toISOString();
+  const created = await prisma.message.create({
+    data: {
+      fromId: userId,
+      toId: other.id,
+      body: clean,
+      kind,
+      attachmentUrl: input.attachmentUrl ?? null,
+      attachmentName: input.attachmentName ?? null,
+      at,
+    },
+    select: { id: true },
+  });
+  return {
+    id: created.id,
+    from: "me",
+    kind,
+    body: clean,
+    attachmentUrl: input.attachmentUrl ?? null,
+    attachmentName: input.attachmentName ?? null,
+    at,
+  };
 }
 
 /** 自 sinceIso 之后、发给我的新消息（轮询用） */
@@ -21,41 +123,24 @@ export async function getIncomingSince(sinceIso: string): Promise<IncomingMessag
   const rows = await prisma.message.findMany({
     where: { toId: userId, at: { gt: sinceIso } },
     orderBy: { at: "asc" },
-    select: { body: true, at: true, from: { select: { handle: true, name: true } } },
-  });
-  return rows.map((r) => ({ from: r.from.handle, fromName: r.from.name, body: r.body, at: r.at }));
-}
-
-/** 与某好友的会话历史（按时间升序） */
-export async function getConversation(handle: string): Promise<ChatMessage[]> {
-  const userId = await getSessionUserId();
-  const other = await prisma.user.findUnique({ where: { handle }, select: { id: true } });
-  if (!other) return [];
-
-  const rows = await prisma.message.findMany({
-    where: {
-      OR: [
-        { fromId: userId, toId: other.id },
-        { fromId: other.id, toId: userId },
-      ],
+    select: {
+      id: true,
+      kind: true,
+      body: true,
+      attachmentUrl: true,
+      attachmentName: true,
+      at: true,
+      from: { select: { handle: true, name: true } },
     },
-    orderBy: { at: "asc" },
-    select: { fromId: true, body: true, at: true },
   });
-  return rows.map((m) => ({ from: m.fromId === userId ? "me" : "friend", body: m.body, at: m.at }));
-}
-
-export async function sendMessage(handle: string, body: string): Promise<ChatMessage> {
-  const userId = await getSessionUserId();
-  const clean = body.trim();
-  if (!clean) throw new Error("消息不能为空");
-
-  const me = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { handle: true, name: true } });
-  const other = await prisma.user.findUnique({ where: { handle }, select: { id: true, handle: true } });
-  if (!other) throw new Error("用户不存在");
-
-  const at = new Date().toISOString();
-  await prisma.message.create({ data: { fromId: userId, toId: other.id, body: clean, at } });
-  void me; // 接收方通过轮询取到该消息
-  return { from: "me", body: clean, at };
+  return rows.map((r) => ({
+    id: r.id,
+    from: r.from.handle,
+    fromName: r.from.name,
+    kind: r.kind as MessageKind,
+    body: r.body,
+    attachmentUrl: r.attachmentUrl,
+    attachmentName: r.attachmentName,
+    at: r.at,
+  }));
 }

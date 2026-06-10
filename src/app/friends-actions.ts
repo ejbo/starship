@@ -10,20 +10,23 @@ import {
   type FriendRequestView,
 } from "@/lib/friends-service";
 import {
-  getConversation,
+  getConversationPage,
   getIncomingSince,
   sendMessage,
   type ChatMessage,
+  type ConversationPage,
   type IncomingMessage,
+  type SendInput,
 } from "@/lib/message-service";
 import type { Friend } from "@/lib/types";
 
-export async function loadConversationAction(handle: string): Promise<ChatMessage[]> {
-  return getConversation(handle);
+/** 加载一页会话；beforeIso 为空取最新页，否则取更老的历史页 */
+export async function loadConversationAction(handle: string, beforeIso?: string): Promise<ConversationPage> {
+  return getConversationPage(handle, beforeIso);
 }
 
-export async function sendMessageAction(handle: string, body: string): Promise<ChatMessage> {
-  return sendMessage(handle, body);
+export async function sendMessageAction(handle: string, body: string, input?: SendInput): Promise<ChatMessage> {
+  return sendMessage(handle, body, input);
 }
 
 export async function addFriendAction(handle: string): Promise<{ ok: boolean; error?: string }> {
