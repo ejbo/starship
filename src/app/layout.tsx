@@ -28,7 +28,13 @@ export default async function RootLayout({
         />
         <div className="min-h-[70vh]">{children}</div>
         <SiteFooter />
-        {user && <FriendsDock friends={friends} requests={requests} />}
+        {user && (
+          <FriendsDock
+            me={{ name: user.name, avatarHue: user.avatarHue }}
+            friends={friends}
+            requests={requests}
+          />
+        )}
       </body>
     </html>
   );
