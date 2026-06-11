@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { ArrowDownLeft, ArrowUpRight, Coins, RotateCcw } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Coins, RotateCcw, TrendingUp } from "lucide-react";
 import { TopUpPanel } from "@/components/wallet/topup-panel";
 import { getBalance, getTransactions } from "@/lib/credits-service";
 import { getSessionUserIdOrNull } from "@/lib/session";
@@ -10,6 +10,7 @@ const kindMeta: Record<string, { label: string; icon: React.ComponentType<{ clas
   topup: { label: "充值", icon: ArrowDownLeft, cls: "text-free" },
   purchase: { label: "购买", icon: ArrowUpRight, cls: "text-ink" },
   refund: { label: "退款", icon: RotateCcw, cls: "text-free" },
+  earning: { label: "收益分成", icon: TrendingUp, cls: "text-free" },
 };
 
 export default async function WalletPage() {

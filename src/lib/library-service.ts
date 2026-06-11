@@ -2,6 +2,9 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { getSessionUserId } from "@/lib/session";
 
+/** 开发者收益分成比例（Steam 式 70/30，开发者得 70%） */
+const DEV_SHARE = 0.7;
+
 /** 当前用户是否已获取该产品 */
 export async function isInLibrary(slug: string): Promise<boolean> {
   const userId = await getSessionUserId();
@@ -23,7 +26,7 @@ export async function acquire(slug: string): Promise<void> {
   const userId = await getSessionUserId();
   const product = await prisma.product.findUnique({
     where: { slug },
-    select: { id: true, priceCredits: true },
+    select: { id: true, priceCredits: true, ownerUserId: true },
   });
   if (!product) throw new Error("产品不存在");
 
@@ -47,6 +50,19 @@ export async function acquire(slug: string): Promise<void> {
       await tx.creditTransaction.create({
         data: { userId, kind: "purchase", amount: -price, balanceAfter: after.credits, productSlug: slug, note: "购买产品", createdAt: new Date().toISOString() },
       });
+
+      // 收益分成：开发者得 70%（平台留 30%）。买自己应用不分成。
+      const share = Math.floor(price * DEV_SHARE);
+      if (product.ownerUserId && product.ownerUserId !== userId && share > 0) {
+        const ownerAfter = await tx.user.update({
+          where: { id: product.ownerUserId },
+          data: { credits: { increment: share } },
+          select: { credits: true },
+        });
+        await tx.creditTransaction.create({
+          data: { userId: product.ownerUserId, kind: "earning", amount: share, balanceAfter: ownerAfter.credits, productSlug: slug, note: "应用销售分成", createdAt: new Date().toISOString() },
+        });
+      }
     }
 
     await tx.libraryEntry.create({
@@ -66,7 +82,7 @@ export async function getMyCredits(): Promise<number> {
 /** 移出库：acquisitions--，付费产品退还点数（原型行为） */
 export async function removeFromLibrary(slug: string): Promise<void> {
   const userId = await getSessionUserId();
-  const product = await prisma.product.findUnique({ where: { slug }, select: { id: true, priceCredits: true } });
+  const product = await prisma.product.findUnique({ where: { slug }, select: { id: true, priceCredits: true, ownerUserId: true } });
   if (!product) return;
 
   await prisma.$transaction(async (tx) => {
@@ -83,6 +99,19 @@ export async function removeFromLibrary(slug: string): Promise<void> {
         await tx.creditTransaction.create({
           data: { userId, kind: "refund", amount: price, balanceAfter: after.credits, productSlug: slug, note: "移出库退款", createdAt: new Date().toISOString() },
         });
+
+        // 回收开发者分成
+        const share = Math.floor(price * DEV_SHARE);
+        if (product.ownerUserId && product.ownerUserId !== userId && share > 0) {
+          const ownerAfter = await tx.user.update({
+            where: { id: product.ownerUserId },
+            data: { credits: { decrement: share } },
+            select: { credits: true },
+          });
+          await tx.creditTransaction.create({
+            data: { userId: product.ownerUserId, kind: "earning", amount: -share, balanceAfter: ownerAfter.credits, productSlug: slug, note: "退款回收分成", createdAt: new Date().toISOString() },
+          });
+        }
       }
     }
   });
