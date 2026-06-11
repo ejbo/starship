@@ -15,6 +15,7 @@ export default async function AdminBannersPage() {
           subtitle: b.subtitle,
           badge: b.badge,
           imageUrl: b.imageUrl,
+          videoUrl: b.videoUrl,
           href: b.href,
           active: b.active,
           sort: b.sort,

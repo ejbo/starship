@@ -136,6 +136,7 @@ export interface BannerInput {
   subtitle: string;
   badge: string;
   imageUrl: string;
+  videoUrl: string;
   href: string;
   active: boolean;
   sort: number;

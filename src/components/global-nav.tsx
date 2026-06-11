@@ -32,7 +32,7 @@ export function GlobalNav({ user }: GlobalNavProps) {
       : pathname.startsWith(href);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-line bg-panel">
+    <header className="sticky top-0 z-50 border-b border-line/60 bg-panel/72 backdrop-blur-xl supports-[backdrop-filter]:bg-panel/72">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4 sm:gap-6 sm:px-6">
         {/* 移动端汉堡 */}
         <button
@@ -175,7 +175,7 @@ export function GlobalNav({ user }: GlobalNavProps) {
 
       {/* 移动端菜单 */}
       {menuOpen && (
-        <div className="border-t border-line bg-panel px-3 py-2 md:hidden">
+        <div className="border-t border-line/60 bg-panel/95 backdrop-blur-xl px-3 py-2 md:hidden">
           <nav className="flex flex-col">
             {[
               { href: "/", label: "商店", icon: null },

@@ -43,16 +43,18 @@ export default async function StorePage() {
   return (
     <>
       <StoreSubnav />
+      {/* 全宽首发横幅（仿 Steam BULLET FEST），脱离内容容器做满屏出血 */}
+      <PromoBanner
+        banners={banners.map((b) => ({
+          title: b.title,
+          subtitle: b.subtitle,
+          badge: b.badge,
+          imageUrl: b.imageUrl,
+          videoUrl: b.videoUrl,
+          href: b.href,
+        }))}
+      />
       <main className="mx-auto max-w-7xl space-y-10 px-4 pt-6 sm:px-6">
-        <PromoBanner
-          banners={banners.map((b) => ({
-            title: b.title,
-            subtitle: b.subtitle,
-            badge: b.badge,
-            imageUrl: b.imageUrl,
-            href: b.href,
-          }))}
-        />
         <HeroCarousel products={featured} ranks={ranks} />
         {discounted.length > 0 && <Reveal><SectionRow title="限时特惠" products={discounted} /></Reveal>}
         <Reveal><CategoryTiles /></Reveal>

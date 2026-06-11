@@ -381,6 +381,8 @@ model Banner {
   /// 小标签，如"限时 · 即日起至 6 月 30 日"
   badge     String  @default("")
   imageUrl  String
+  /// 可选：动图/视频地址（mp4/webm），存在则覆盖静态图渲染
+  videoUrl  String  @default("")
   href      String  @default("/#featured")
   active    Boolean @default(true)
   sort      Int     @default(0)

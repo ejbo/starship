@@ -10,6 +10,7 @@ export interface BannerView {
   subtitle: string;
   badge: string;
   imageUrl: string;
+  videoUrl: string;
   href: string;
   active: boolean;
   sort: number;
@@ -23,6 +24,7 @@ function BannerEditor({ banner, onRemoved }: { banner: BannerView | null; onRemo
   const [subtitle, setSubtitle] = useState(banner?.subtitle ?? "");
   const [badge, setBadge] = useState(banner?.badge ?? "");
   const [imageUrl, setImageUrl] = useState(banner?.imageUrl ?? "");
+  const [videoUrl, setVideoUrl] = useState(banner?.videoUrl ?? "");
   const [href, setHref] = useState(banner?.href ?? "/#featured");
   const [active, setActive] = useState(banner?.active ?? true);
   const [sort, setSort] = useState(banner?.sort ?? 0);
@@ -30,7 +32,7 @@ function BannerEditor({ banner, onRemoved }: { banner: BannerView | null; onRemo
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   function save() {
-    const input = { title: title.trim(), subtitle: subtitle.trim(), badge: badge.trim(), imageUrl: imageUrl.trim(), href: href.trim() || "/#featured", active, sort: Number(sort) || 0 };
+    const input = { title: title.trim(), subtitle: subtitle.trim(), badge: badge.trim(), imageUrl: imageUrl.trim(), videoUrl: videoUrl.trim(), href: href.trim() || "/#featured", active, sort: Number(sort) || 0 };
     if (!input.title || !input.imageUrl) {
       setMsg({ ok: false, text: "标题和图片必填" });
       return;
@@ -39,7 +41,7 @@ function BannerEditor({ banner, onRemoved }: { banner: BannerView | null; onRemo
       try {
         if (isNew) {
           await createBannerAction(input);
-          setTitle(""); setSubtitle(""); setBadge(""); setImageUrl(""); setHref("/#featured"); setActive(true); setSort(0);
+          setTitle(""); setSubtitle(""); setBadge(""); setImageUrl(""); setVideoUrl(""); setHref("/#featured"); setActive(true); setSort(0);
           setMsg({ ok: true, text: "已新增" });
         } else {
           await updateBannerAction(banner!.id, input);
@@ -96,10 +98,16 @@ function BannerEditor({ banner, onRemoved }: { banner: BannerView | null; onRemo
             </label>
           </div>
         </div>
-        <label className="block space-y-1.5">
-          <span className="text-xs font-medium text-dim">横幅图片</span>
-          <ImageField value={imageUrl} onChange={setImageUrl} maxW={1920} ratio="wide" />
-        </label>
+        <div className="space-y-3">
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium text-dim">横幅图片（视频的封面/降级图）</span>
+            <ImageField value={imageUrl} onChange={setImageUrl} maxW={1920} ratio="wide" />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium text-dim">动图/视频地址（可选，mp4 / webm / gif）</span>
+            <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} className={inputCls} placeholder="https://… .mp4（留空则用静态图）" />
+          </label>
+        </div>
       </div>
 
       <div className="flex items-center gap-3">
