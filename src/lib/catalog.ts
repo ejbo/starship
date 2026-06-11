@@ -130,6 +130,18 @@ export interface LibraryItem {
   usageMinutes: number;
 }
 
+/** 心愿单产品（按加入时间倒序） */
+export async function getWishlistProducts(): Promise<Product[]> {
+  const userId = await getSessionUserIdOrNull();
+  if (!userId) return [];
+  const entries = await prisma.wishlistEntry.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    include: { product: { include: withReviews } },
+  });
+  return entries.map((e) => toProduct(e.product));
+}
+
 async function getMeRecord() {
   const userId = await getSessionUserIdOrNull();
   if (!userId) return null;

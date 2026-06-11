@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ChevronDown, Search, Trophy } from "lucide-react";
+import { ChevronDown, Heart, Search, Trophy } from "lucide-react";
+import { getWishlistCount } from "@/lib/wishlist-service";
 
 type Item = { label: string; href: string };
 const menus: { label: string; items: Item[] }[] = [
@@ -41,8 +42,9 @@ const menus: { label: string; items: Item[] }[] = [
   },
 ];
 
-/** 商店子导航条（仿 Steam Browse/Recommendations/Categories/More + 搜索）。纯 CSS hover 下拉，搜索走原生 GET。 */
-export function StoreSubnav() {
+/** 商店子导航条（仿 Steam Browse/Recommendations/Categories/More + 搜索 + 心愿单）。 */
+export async function StoreSubnav() {
+  const wishCount = await getWishlistCount();
   return (
     <div className="sticky top-14 z-40 border-b border-line bg-panel/95 backdrop-blur">
       <div className="mx-auto flex h-12 max-w-7xl items-center gap-1 px-4 sm:px-6">
@@ -79,6 +81,14 @@ export function StoreSubnav() {
           </label>
         </form>
 
+        <Link
+          href="/wishlist"
+          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-dim transition-colors hover:bg-card-hi hover:text-ink"
+        >
+          <Heart className="size-4 text-rose-500" />
+          <span className="hidden sm:inline">心愿单</span>
+          {wishCount > 0 && <span className="text-xs text-mute">{wishCount}</span>}
+        </Link>
         <Link
           href="/#charts"
           className="hidden items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-dim transition-colors hover:bg-card-hi hover:text-ink sm:flex"

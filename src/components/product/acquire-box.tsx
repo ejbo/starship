@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { Check, Coins, Download, Loader2, Play, Plus } from "lucide-react";
 import { acquireAction, removeAction } from "@/app/p/[slug]/actions";
+import { WishlistButton } from "@/components/product/wishlist-button";
 import { cn } from "@/lib/cn";
 import type { Product } from "@/lib/types";
 
@@ -13,10 +14,12 @@ interface AcquireBoxProps {
   signedOut?: boolean;
   /** 当前用户点数余额（用于付费购买） */
   credits?: number;
+  /** 是否已在心愿单 */
+  wishlisted?: boolean;
 }
 
 /** 获取盒：免费入库 / 付费购买（扣点数）；拥有后可启动 */
-export function AcquireBox({ product, acquired, signedOut, credits = 0 }: AcquireBoxProps) {
+export function AcquireBox({ product, acquired, signedOut, credits = 0, wishlisted = false }: AcquireBoxProps) {
   const [isAcquired, setIsAcquired] = useState(acquired);
   const [balance, setBalance] = useState(credits);
   const [pending, startTransition] = useTransition();
@@ -104,6 +107,7 @@ export function AcquireBox({ product, acquired, signedOut, credits = 0 }: Acquir
             </p>
           )}
           {error && <p className="-mt-2 text-center text-xs text-danger">{error}</p>}
+          {!isAcquired && <WishlistButton slug={product.slug} initial={wishlisted} />}
         </>
       )}
 

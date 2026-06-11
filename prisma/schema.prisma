@@ -48,6 +48,7 @@ model User {
   presenceKind String          @default("offline")
   presenceDetail String?
   library      LibraryEntry[]
+  wishlist     WishlistEntry[]
   creditTxns   CreditTransaction[]
   friendsOut   FriendEdge[]    @relation("FriendA")
   friendsIn    FriendEdge[]    @relation("FriendB")
@@ -150,6 +151,7 @@ model Product {
   clientSecretHash String?
   reviews      Review[]
   inLibraries  LibraryEntry[]
+  wishlistedBy WishlistEntry[]
   achievements Achievement[]
 }
 
@@ -241,6 +243,19 @@ model Review {
   product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([productId])
+}
+
+/// 心愿单（关注但未获取的产品；Steam 式）
+model WishlistEntry {
+  id        String  @id @default(cuid())
+  userId    String
+  productId String
+  createdAt String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId])
 }
 
 model LibraryEntry {

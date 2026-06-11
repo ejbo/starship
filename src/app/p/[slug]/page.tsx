@@ -12,6 +12,7 @@ import { TypeBadge, typeMeta } from "@/components/ui/type-badge";
 import { describeCapability, getBySlug } from "@/lib/catalog";
 import { getAchievementsForUser } from "@/lib/achievement-service";
 import { getMyCredits, isInLibrary } from "@/lib/library-service";
+import { isInWishlist } from "@/lib/wishlist-service";
 import { getMyReview } from "@/lib/review-service";
 import { getSessionUserIdOrNull } from "@/lib/session";
 
@@ -24,6 +25,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
   const userId = await getSessionUserIdOrNull();
   const acquired = userId ? await isInLibrary(slug) : false;
+  const wishlisted = userId ? await isInWishlist(slug) : false;
   const credits = userId ? await getMyCredits() : 0;
   const myReview = userId ? await getMyReview(slug) : null;
   const achievements = await getAchievementsForUser(product.id, userId);
@@ -83,7 +85,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
         {/* 右侧栏：只保留购买/获取盒 */}
         <aside className="lg:sticky lg:top-18 lg:self-start">
-          <AcquireBox product={product} acquired={acquired} signedOut={!userId} credits={credits} />
+          <AcquireBox product={product} acquired={acquired} signedOut={!userId} credits={credits} wishlisted={wishlisted} />
         </aside>
       </div>
     </main>
