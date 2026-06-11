@@ -1,5 +1,6 @@
 import { Clock, ThumbsDown, ThumbsUp } from "lucide-react";
 import { HelpfulButton } from "@/components/product/helpful-button";
+import { ReviewBody } from "@/components/product/review-body";
 import { Avatar } from "@/components/ui/avatar";
 import { ratingVerdict } from "@/components/ui/rating";
 import { cn } from "@/lib/cn";
@@ -77,7 +78,7 @@ export function ReviewSection({ product }: { product: Product }) {
                   <p className="text-[11px] text-mute">{review.date}</p>
                 </div>
               </div>
-              <p className="text-sm leading-relaxed text-ink/90">{review.body}</p>
+              <ReviewBody body={review.body} />
               {review.id ? (
                 <HelpfulButton reviewId={review.id} initial={review.helpful} />
               ) : (
