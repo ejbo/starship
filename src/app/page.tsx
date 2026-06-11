@@ -5,6 +5,7 @@ import { PromoBanner } from "@/components/store/promo-banner";
 import { SectionRow } from "@/components/store/section-row";
 import { StoreSubnav } from "@/components/store/store-subnav";
 import { TopCharts } from "@/components/store/top-charts";
+import { Reveal } from "@/components/ui/reveal";
 import { getActiveBanners } from "@/lib/admin-service";
 import { getAllProducts, getByType, getDiscounted, getDiscoveryQueue, getFeatured } from "@/lib/catalog";
 
@@ -53,19 +54,23 @@ export default async function StorePage() {
           }))}
         />
         <HeroCarousel products={featured} ranks={ranks} />
-        {discounted.length > 0 && <SectionRow title="限时特惠" products={discounted} />}
-        <CategoryTiles />
-        <div id="discovery" className="scroll-mt-28">
-          <DiscoveryQueue products={discovery} />
-        </div>
-        <div id="charts" className="scroll-mt-28">
-          <TopCharts tabs={chartTabs} />
-        </div>
-        <SectionRow title="热门应用" products={apps} />
-        <SectionRow title="AI 模型" products={models} />
-        <SectionRow title="Agent" products={agents} />
-        <SectionRow title="Skill 工坊" products={skills} />
-        <SectionRow title="教程与视频" products={[...tutorials, ...videos]} />
+        {discounted.length > 0 && <Reveal><SectionRow title="限时特惠" products={discounted} /></Reveal>}
+        <Reveal><CategoryTiles /></Reveal>
+        <Reveal>
+          <div id="discovery" className="scroll-mt-28">
+            <DiscoveryQueue products={discovery} />
+          </div>
+        </Reveal>
+        <Reveal>
+          <div id="charts" className="scroll-mt-28">
+            <TopCharts tabs={chartTabs} />
+          </div>
+        </Reveal>
+        <Reveal><SectionRow title="热门应用" products={apps} /></Reveal>
+        <Reveal><SectionRow title="AI 模型" products={models} /></Reveal>
+        <Reveal><SectionRow title="Agent" products={agents} /></Reveal>
+        <Reveal><SectionRow title="Skill 工坊" products={skills} /></Reveal>
+        <Reveal><SectionRow title="教程与视频" products={[...tutorials, ...videos]} /></Reveal>
       </main>
     </>
   );
