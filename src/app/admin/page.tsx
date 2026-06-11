@@ -10,13 +10,20 @@ export const dynamic = "force-dynamic";
 export default async function AdminProductsPage() {
   const products = await listAllProductsAdmin();
   const publishedCount = products.filter((p) => p.status === "published").length;
+  const pendingCount = products.filter((p) => p.status === "pending").length;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline gap-3 text-sm text-dim">
+      <div className="flex flex-wrap items-baseline gap-3 text-sm text-dim">
         <span>共 {products.length} 个产品</span>
         <span>·</span>
         <span>已上架 {publishedCount}</span>
+        {pendingCount > 0 && (
+          <>
+            <span>·</span>
+            <span className="font-medium text-accent">待审核 {pendingCount}</span>
+          </>
+        )}
         <span>·</span>
         <span>精选 {products.filter((p) => p.featured).length}</span>
       </div>
@@ -41,6 +48,8 @@ export default async function AdminProductsPage() {
                 <TypeBadge type={p.type} />
                 {p.status === "published" ? (
                   <span className="rounded bg-free/10 px-1.5 py-0.5 text-[10px] font-medium text-free">已上架</span>
+                ) : p.status === "pending" ? (
+                  <span className="rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">待审核</span>
                 ) : (
                   <span className="rounded bg-warn/10 px-1.5 py-0.5 text-[10px] font-medium text-warn">草稿</span>
                 )}
@@ -54,7 +63,7 @@ export default async function AdminProductsPage() {
               </p>
             </div>
 
-            <ProductRowActions id={p.id} published={p.status === "published"} featured={p.featured} />
+            <ProductRowActions id={p.id} status={p.status} featured={p.featured} />
 
             <Link
               href={`/admin/products/${p.id}`}

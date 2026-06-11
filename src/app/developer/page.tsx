@@ -50,10 +50,12 @@ export default async function DeveloperPage() {
                           className={
                             app.status === "published"
                               ? "rounded bg-free/10 px-1.5 py-0.5 text-[10px] font-medium text-free"
-                              : "rounded bg-warn/10 px-1.5 py-0.5 text-[10px] font-medium text-warn"
+                              : app.status === "pending"
+                                ? "rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent"
+                                : "rounded bg-warn/10 px-1.5 py-0.5 text-[10px] font-medium text-warn"
                           }
                         >
-                          {app.status === "published" ? "已发布" : "草稿"}
+                          {app.status === "published" ? "已上架" : app.status === "pending" ? "审核中" : "草稿"}
                         </span>
                       </p>
                       <p className="mt-0.5 text-xs text-mute">

@@ -8,6 +8,9 @@ import {
   deleteAchievement,
   regenerateSecret,
   setPublished,
+  submitForReview,
+  unlistApp,
+  withdrawReview,
   updateApp,
   updateAppHosting,
   updateAppMedia,
@@ -55,6 +58,27 @@ export async function updateAppAction(id: string, formData: FormData) {
 
 export async function setPublishedAction(id: string, published: boolean) {
   await setPublished(id, published);
+  revalidatePath(`/developer/${id}`);
+  revalidatePath("/developer");
+  revalidatePath("/");
+}
+
+export async function submitForReviewAction(id: string) {
+  await submitForReview(id);
+  revalidatePath(`/developer/${id}`);
+  revalidatePath("/developer");
+  revalidatePath("/admin");
+}
+
+export async function withdrawReviewAction(id: string) {
+  await withdrawReview(id);
+  revalidatePath(`/developer/${id}`);
+  revalidatePath("/developer");
+  revalidatePath("/admin");
+}
+
+export async function unlistAppAction(id: string) {
+  await unlistApp(id);
   revalidatePath(`/developer/${id}`);
   revalidatePath("/developer");
   revalidatePath("/");

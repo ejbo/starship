@@ -7,7 +7,7 @@ import { AppCompleteness } from "@/components/developer/app-completeness";
 import { AppHostingForm } from "@/components/developer/app-hosting-form";
 import { AppMediaForm } from "@/components/developer/app-media-form";
 import { AppMetaForm } from "@/components/developer/app-meta-form";
-import { PublishToggle } from "@/components/developer/publish-toggle";
+import { ReviewStatus } from "@/components/developer/review-status";
 import { getMyApp, HOSTED_APP_TEMPLATE } from "@/lib/developer-service";
 import { getSessionUserIdOrNull } from "@/lib/session";
 
@@ -47,8 +47,8 @@ export default async function AppEditPage({
       <div className="space-y-6">
         <AppCompleteness app={app} />
 
-        <Section title="发布状态">
-          <PublishToggle id={app.id} published={app.status === "published"} />
+        <Section title="上架状态">
+          <ReviewStatus id={app.id} status={app.status} />
         </Section>
 
         <Section title="应用信息">

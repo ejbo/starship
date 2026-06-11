@@ -237,6 +237,24 @@ export async function setPublished(id: string, published: boolean): Promise<void
   });
 }
 
+/** 提交审核：草稿 → 待审核（管理员通过后才上架，Steam 式审核流程） */
+export async function submitForReview(id: string): Promise<void> {
+  const userId = await getSessionUserId();
+  await prisma.product.updateMany({ where: { id, ownerUserId: userId, status: "draft" }, data: { status: "pending" } });
+}
+
+/** 撤回审核：待审核 → 草稿 */
+export async function withdrawReview(id: string): Promise<void> {
+  const userId = await getSessionUserId();
+  await prisma.product.updateMany({ where: { id, ownerUserId: userId, status: "pending" }, data: { status: "draft" } });
+}
+
+/** 开发者下架自己的已上架应用 → 草稿 */
+export async function unlistApp(id: string): Promise<void> {
+  const userId = await getSessionUserId();
+  await prisma.product.updateMany({ where: { id, ownerUserId: userId, status: "published" }, data: { status: "draft" } });
+}
+
 export async function regenerateSecret(id: string): Promise<string> {
   const userId = await getSessionUserId();
   const app = await prisma.product.findFirst({ where: { id, ownerUserId: userId }, select: { id: true } });
