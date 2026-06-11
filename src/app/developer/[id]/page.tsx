@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 import { AchievementsEditor } from "@/components/developer/achievements-editor";
 import { AppCredentials } from "@/components/developer/app-credentials";
+import { AppMediaForm } from "@/components/developer/app-media-form";
 import { AppMetaForm } from "@/components/developer/app-meta-form";
 import { PublishToggle } from "@/components/developer/publish-toggle";
 import { getMyApp } from "@/lib/developer-service";
@@ -58,6 +59,18 @@ export default async function AppEditPage({
               launchMode: app.launchMode,
               icon: app.icon,
               priceCredits: app.priceCredits?.toString() ?? "",
+            }}
+          />
+        </Section>
+
+        <Section title="媒体（封面 · Banner · 截图 · 预告视频）">
+          <AppMediaForm
+            id={app.id}
+            initial={{
+              capsuleUrl: app.capsuleUrl ?? "",
+              bannerUrl: app.bannerUrl ?? "",
+              screenshotUrls: app.screenshotUrls ?? [],
+              trailerUrl: app.trailerUrl ?? "",
             }}
           />
         </Section>

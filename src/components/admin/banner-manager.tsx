@@ -1,7 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import { Plus, Save, Trash2 } from "lucide-react";
-import { ImageField } from "./image-field";
+import { ImageField } from "@/components/ui/image-field";
 import { createBannerAction, deleteBannerAction, updateBannerAction } from "@/app/admin/actions";
 
 export interface BannerView {

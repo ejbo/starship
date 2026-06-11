@@ -141,6 +141,28 @@ export async function updateApp(id: string, input: UpdateAppInput): Promise<void
   });
 }
 
+export interface AppMediaInput {
+  capsuleUrl: string | null;
+  bannerUrl: string | null;
+  screenshotUrls: string[];
+  trailerUrl: string | null;
+}
+
+/** 开发者编辑自己应用的媒体（封面/banner/截图/预告）。仅 owner 可改。 */
+export async function updateAppMedia(id: string, input: AppMediaInput): Promise<void> {
+  const userId = await getSessionUserId();
+  await prisma.product.updateMany({
+    where: { id, ownerUserId: userId },
+    data: {
+      capsuleUrl: input.capsuleUrl,
+      bannerUrl: input.bannerUrl,
+      screenshotUrls: input.screenshotUrls,
+      trailerUrl: input.trailerUrl,
+      updatedAt: new Date().toISOString().slice(0, 10),
+    },
+  });
+}
+
 export async function setPublished(id: string, published: boolean): Promise<void> {
   const userId = await getSessionUserId();
   await prisma.product.updateMany({

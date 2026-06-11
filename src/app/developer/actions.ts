@@ -9,8 +9,16 @@ import {
   regenerateSecret,
   setPublished,
   updateApp,
+  updateAppMedia,
+  type AppMediaInput,
 } from "@/lib/developer-service";
 import type { ProductType } from "@/lib/types";
+
+export async function updateAppMediaAction(id: string, input: AppMediaInput) {
+  await updateAppMedia(id, input);
+  revalidatePath(`/developer/${id}`);
+  revalidatePath("/");
+}
 
 export async function createAppAction(formData: FormData) {
   const name = String(formData.get("name") ?? "");

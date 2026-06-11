@@ -1,7 +1,8 @@
 "use client";
 import { useState, useTransition, type ReactNode } from "react";
-import { Plus, Save, Trash2 } from "lucide-react";
-import { ImageField } from "./image-field";
+import { Save } from "lucide-react";
+import { ImageField } from "@/components/ui/image-field";
+import { ScreenshotsField } from "@/components/ui/screenshots-field";
 import { saveProductAction } from "@/app/admin/actions";
 import type { AdminProductInput } from "@/lib/admin-service";
 import type { Product as DbProduct } from "@prisma/client";
@@ -122,22 +123,8 @@ export function AdminProductForm({ product }: { product: DbProduct }) {
           <L label="宽幅 Banner" hint="精选大图用"><ImageField value={bannerUrl} onChange={setBannerUrl} maxW={1600} ratio="wide" /></L>
         </div>
         <div className="space-y-2">
-          <span className="text-xs font-medium text-dim">截图（精选卡 2×2 / 详情页画廊）</span>
-          <div className="space-y-3">
-            {shots.map((s, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <div className="grow">
-                  <ImageField value={s} onChange={(v) => setShots((arr) => arr.map((x, j) => (j === i ? v : x)))} maxW={1280} ratio="wide" />
-                </div>
-                <button type="button" onClick={() => setShots((arr) => arr.filter((_, j) => j !== i))} className="mt-1 rounded-md p-1.5 text-mute hover:text-danger" title="删除">
-                  <Trash2 className="size-4" />
-                </button>
-              </div>
-            ))}
-            <button type="button" onClick={() => setShots((arr) => [...arr, ""])} className="flex items-center gap-1.5 rounded-md border border-dashed border-line px-3 py-1.5 text-xs font-medium text-dim transition-colors hover:border-accent/50 hover:text-accent">
-              <Plus className="size-3.5" /> 添加截图
-            </button>
-          </div>
+          <span className="text-xs font-medium text-dim">截图（精选卡 2×2 / 详情页画廊，顺序即展示顺序）</span>
+          <ScreenshotsField value={shots} onChange={setShots} />
         </div>
         <L label="预告视频 URL" hint="mp4 直链，可空"><input value={trailerUrl} onChange={(e) => setTrailerUrl(e.target.value)} className={inputCls} placeholder="https://….mp4" /></L>
         <div className="grid gap-4 sm:grid-cols-3">

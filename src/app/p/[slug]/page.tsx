@@ -64,7 +64,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
       <div className="grid gap-8 lg:grid-cols-[1fr_330px]">
         <div className="min-w-0 space-y-8">
-          <MediaGallery art={product.art} />
+          <MediaGallery art={product.art} trailerUrl={product.trailerUrl} />
 
           <section className="space-y-3">
             <h2 className="text-lg font-bold">关于</h2>
