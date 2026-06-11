@@ -9,8 +9,10 @@ import {
   regenerateSecret,
   setPublished,
   updateApp,
+  updateAppHosting,
   updateAppMedia,
   type AppMediaInput,
+  type HostingInput,
 } from "@/lib/developer-service";
 import type { ProductType } from "@/lib/types";
 
@@ -20,11 +22,18 @@ export async function updateAppMediaAction(id: string, input: AppMediaInput) {
   revalidatePath("/");
 }
 
+export async function updateAppHostingAction(id: string, input: HostingInput) {
+  await updateAppHosting(id, input);
+  revalidatePath(`/developer/${id}`);
+  revalidatePath("/");
+}
+
 export async function createAppAction(formData: FormData) {
   const name = String(formData.get("name") ?? "");
   const type = String(formData.get("type") ?? "app") as ProductType;
   const tagline = String(formData.get("tagline") ?? "");
-  const created = await createApp({ name, type, tagline });
+  const slug = String(formData.get("slug") ?? "");
+  const created = await createApp({ name, type, tagline, slug });
   // 把一次性密钥经查询串带到编辑页展示
   redirect(`/developer/${created.id}?secret=${encodeURIComponent(created.clientSecret)}`);
 }
@@ -38,8 +47,6 @@ export async function updateAppAction(id: string, formData: FormData) {
     description: String(formData.get("description") ?? ""),
     tags,
     capabilities,
-    entryUrl: String(formData.get("entryUrl") ?? "").trim() || null,
-    launchMode: String(formData.get("launchMode") ?? "embedded"),
     icon: String(formData.get("icon") ?? "grid"),
     priceCredits: priceRaw ? Math.max(0, Number(priceRaw)) || null : null,
   });

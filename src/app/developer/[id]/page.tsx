@@ -4,10 +4,11 @@ import { ChevronLeft, ExternalLink } from "lucide-react";
 import { AchievementsEditor } from "@/components/developer/achievements-editor";
 import { AppCredentials } from "@/components/developer/app-credentials";
 import { AppCompleteness } from "@/components/developer/app-completeness";
+import { AppHostingForm } from "@/components/developer/app-hosting-form";
 import { AppMediaForm } from "@/components/developer/app-media-form";
 import { AppMetaForm } from "@/components/developer/app-meta-form";
 import { PublishToggle } from "@/components/developer/publish-toggle";
-import { getMyApp } from "@/lib/developer-service";
+import { getMyApp, HOSTED_APP_TEMPLATE } from "@/lib/developer-service";
 import { getSessionUserIdOrNull } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -58,10 +59,22 @@ export default async function AppEditPage({
               description: app.description.join("\n\n").replace("（待完善）", ""),
               tags: app.tags.join(", "),
               capabilities: app.capabilities.join(" "),
-              entryUrl: app.entryUrl ?? "",
-              launchMode: app.launchMode,
               icon: app.icon,
               priceCredits: app.priceCredits?.toString() ?? "",
+            }}
+          />
+        </Section>
+
+        <Section title="运行形态（外部部署 / 平台托管单页）">
+          <AppHostingForm
+            id={app.id}
+            slug={app.slug}
+            template={HOSTED_APP_TEMPLATE}
+            initial={{
+              kind: app.hostedHtml ? "hosted" : "external",
+              entryUrl: app.entryUrl ?? "",
+              launchMode: app.launchMode,
+              hostedHtml: app.hostedHtml ?? "",
             }}
           />
         </Section>

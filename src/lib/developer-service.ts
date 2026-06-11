@@ -57,12 +57,13 @@ export interface CreatedApp {
   clientSecret: string;
 }
 
-export async function createApp(input: { name: string; type: ProductType; tagline: string }): Promise<CreatedApp> {
+export async function createApp(input: { name: string; type: ProductType; tagline: string; slug?: string }): Promise<CreatedApp> {
   const userId = await getSessionUserId();
   const name = input.name.trim();
   if (!name) throw new Error("应用名不能为空");
 
-  const slug = await uniqueSlug(name);
+  // 开发者可自定义 slug（会规范化 + 查重，冲突自动加后缀）；留空则由应用名派生
+  const slug = await uniqueSlug(input.slug?.trim() || name);
   const clientId = generateClientId();
   const clientSecret = generateAppSecret();
   const today = new Date().toISOString().slice(0, 10);
@@ -117,8 +118,6 @@ export interface UpdateAppInput {
   description: string;
   tags: string[];
   capabilities: string[];
-  entryUrl: string | null;
-  launchMode: string;
   icon: string;
   priceCredits: number | null;
 }
@@ -132,13 +131,80 @@ export async function updateApp(id: string, input: UpdateAppInput): Promise<void
       description: splitParas(input.description),
       tags: input.tags,
       capabilities: input.capabilities,
-      entryUrl: input.entryUrl,
-      launchMode: input.launchMode === "newtab" ? "newtab" : "embedded",
       icon: input.icon || "grid",
       priceCredits: input.priceCredits,
       updatedAt: new Date().toISOString().slice(0, 10),
     },
   });
+}
+
+/** 单页托管应用的起始模板（含 SDK 用法），开发者可一键填入后改 */
+export const HOSTED_APP_TEMPLATE = `<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>我的星港应用</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 24px; background: #f3f5f8; color: #1c2433; }
+    h1 { font-size: 20px; }
+    button { background: #2563eb; color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; font-size: 14px; cursor: pointer; }
+    #out { margin-top: 16px; white-space: pre-wrap; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <h1>你好，<span id="who">…</span></h1>
+  <p>这是一个跑在星港沙箱里的托管应用。点下面按钮，经平台 Gateway 调用大模型（你的 Key 不出平台）。</p>
+  <button id="ask">问 AI 一个问题</button>
+  <div id="out"></div>
+
+  <!-- 平台 SDK：身份 / AI / 存储 / 成就 -->
+  <script src="/starport-sdk.js"></script>
+  <script>
+    starport.ready(async () => {
+      const me = await starport.identity();
+      document.getElementById('who').textContent = me.name || '访客';
+    });
+    document.getElementById('ask').onclick = async () => {
+      const out = document.getElementById('out');
+      out.textContent = '思考中…';
+      try {
+        const r = await starport.ai.chat('用一句话夸夸星港平台');
+        out.textContent = r.reply || JSON.stringify(r);
+      } catch (e) { out.textContent = '调用失败：' + e; }
+    };
+  </script>
+</body>
+</html>
+`;
+
+export type HostingInput =
+  | { kind: "external"; entryUrl: string | null; launchMode: string }
+  | { kind: "hosted"; hostedHtml: string };
+
+/** 设置应用运行形态：外部部署(entryUrl) 或 平台托管单页(上传 HTML)。仅 owner 可改。 */
+export async function updateAppHosting(id: string, input: HostingInput): Promise<void> {
+  const userId = await getSessionUserId();
+  const app = await prisma.product.findFirst({ where: { id, ownerUserId: userId }, select: { slug: true } });
+  if (!app) throw new Error("无权操作");
+  const updatedAt = new Date().toISOString().slice(0, 10);
+
+  if (input.kind === "hosted") {
+    await prisma.product.updateMany({
+      where: { id, ownerUserId: userId },
+      data: { hostedHtml: input.hostedHtml, entryUrl: `/api/apps/${app.slug}/serve`, launchMode: "embedded", updatedAt },
+    });
+  } else {
+    await prisma.product.updateMany({
+      where: { id, ownerUserId: userId },
+      data: {
+        hostedHtml: null,
+        entryUrl: input.entryUrl?.trim() || null,
+        launchMode: input.launchMode === "newtab" ? "newtab" : "embedded",
+        updatedAt,
+      },
+    });
+  }
 }
 
 export interface AppMediaInput {

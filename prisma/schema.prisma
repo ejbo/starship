@@ -129,8 +129,10 @@ model Product {
   acquisitions Int
   developer    String
   version      String?
-  /// 应用入口（部署地址）
+  /// 应用入口（部署地址）；托管单页应用时指向 /api/apps/<slug>/serve
   entryUrl     String?
+  /// 平台托管的单页应用 HTML（上传后存这里，经 serve 路由在沙箱内运行；为空=外部部署应用）
+  hostedHtml   String?
   /// 运行方式：embedded 沙箱 iframe 内运行 / newtab 新标签页打开
   launchMode   String   @default("embedded")
   /// null = 免费

@@ -10,8 +10,6 @@ interface AppMetaFormProps {
     description: string;
     tags: string;
     capabilities: string;
-    entryUrl: string;
-    launchMode: string;
     icon: string;
     priceCredits: string;
   };
@@ -52,19 +50,6 @@ export function AppMetaForm({ id, initial }: AppMetaFormProps) {
         defaultValue={initial.capabilities}
         placeholder="llm:claude storage:256mb"
       />
-      <Field label="入口 URL（web 应用部署地址，留空则纯展示）" name="entryUrl" defaultValue={initial.entryUrl} placeholder="https://my-app.example.com" />
-      <label className="block space-y-1">
-        <span className="text-xs text-dim">运行方式</span>
-        <select
-          name="launchMode"
-          defaultValue={initial.launchMode}
-          onChange={() => setSaved(false)}
-          className="w-full rounded-md border border-line bg-page px-3 py-2 text-sm focus:border-accent focus:outline-none"
-        >
-          <option value="embedded">嵌入沙箱（iframe 内运行，用 postMessage SDK）</option>
-          <option value="newtab">新标签页（独立 web 应用，用 OAuth + REST API）</option>
-        </select>
-      </label>
       <div className="grid grid-cols-2 gap-3">
         <Field label="图标名" name="icon" defaultValue={initial.icon} placeholder="grid" />
         <Field label="解锁点数（留空=免费）" name="priceCredits" defaultValue={initial.priceCredits} placeholder="0" />
