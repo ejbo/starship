@@ -8,6 +8,8 @@ import {
   LevelBadge,
 } from "@/components/profile/profile-blocks";
 import { Avatar } from "@/components/ui/avatar";
+import { CapsuleArt } from "@/components/ui/capsule-art";
+import { Reveal } from "@/components/ui/reveal";
 import { getProductIcon } from "@/lib/icons";
 import { formatPlaytime, formatPlaytimeShort } from "@/lib/playtime";
 import { getBySlug, getCurrentUser, getFriends, getWallPosts } from "@/lib/catalog";
@@ -48,6 +50,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
     .slice(0, 4);
   const recentProducts = await Promise.all(recentEntries.map((e) => getBySlug(e.slug)));
   const recentlyUsed = recentEntries.map((entry, i) => ({ entry, product: recentProducts[i] }));
+  const coverImage = showcaseProducts[0]?.art.bannerUrl ?? recentProducts.find(Boolean)?.art.bannerUrl;
 
   return (
     <main className="mx-auto max-w-6xl px-4 sm:px-6">
@@ -60,6 +63,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
         friendCode={editable.friendCode}
         signature={user.signature}
         badges={user.badges}
+        coverImage={coverImage}
         online
         actions={
           <>
@@ -77,32 +81,36 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_300px]">
         <div className="min-w-0 space-y-6">
-          <FavoriteShowcase products={showcaseProducts} />
-          <AchievementShowcase achievements={achievements} total={unlockCount} />
+          <Reveal><FavoriteShowcase products={showcaseProducts} /></Reveal>
+          <Reveal delay={0.05}><AchievementShowcase achievements={achievements} total={unlockCount} /></Reveal>
 
-          <div className="capsule p-5">
-            <h3 className="mb-3 text-sm font-semibold">最近动态</h3>
-            <ul className="space-y-3">
-              {recentlyUsed.map(({ entry, product }) =>
-                product ? (
-                  <li key={entry.slug} className="flex items-center gap-3">
-                    <Link href={`/p/${product.slug}`} className="shrink-0">
-                      <span className="block w-16 overflow-hidden rounded ring-1 ring-line">
-                        <ProductMini slug={product.slug} hueA={product.art.hueA} hueB={product.art.hueB} icon={product.art.icon} />
-                      </span>
-                    </Link>
-                    <div className="min-w-0 grow">
-                      <p className="truncate text-sm">
-                        使用了 <Link href={`/p/${product.slug}`} className="font-medium text-ink hover:text-accent">{product.name}</Link>
-                      </p>
-                      <p className="text-xs text-mute">最近 {entry.lastUsedAt}</p>
-                    </div>
-                    <span className="shrink-0 text-xs text-mute">{formatPlaytimeShort(entry.usageMinutes)}</span>
-                  </li>
-                ) : null,
+          <Reveal delay={0.1}>
+            <div className="capsule p-5">
+              <h3 className="mb-3 text-sm font-semibold">最近动态</h3>
+              {recentlyUsed.length === 0 ? (
+                <p className="text-sm text-dim">还没有使用记录。</p>
+              ) : (
+                <ul className="space-y-3">
+                  {recentlyUsed.map(({ entry, product }) =>
+                    product ? (
+                      <li key={entry.slug} className="flex items-center gap-3">
+                        <Link href={`/p/${product.slug}`} className="w-16 shrink-0 overflow-hidden rounded ring-1 ring-line">
+                          <CapsuleArt art={product.art} ratio="wide" iconClassName="size-1/3" />
+                        </Link>
+                        <div className="min-w-0 grow">
+                          <p className="truncate text-sm">
+                            使用了 <Link href={`/p/${product.slug}`} className="font-medium text-ink hover:text-accent">{product.name}</Link>
+                          </p>
+                          <p className="text-xs text-mute">最近 {entry.lastUsedAt}</p>
+                        </div>
+                        <span className="shrink-0 text-xs text-mute">{formatPlaytimeShort(entry.usageMinutes)}</span>
+                      </li>
+                    ) : null,
+                  )}
+                </ul>
               )}
-            </ul>
-          </div>
+            </div>
+          </Reveal>
         </div>
 
         <aside className="space-y-4">
@@ -142,6 +150,7 @@ async function PublicProfileView({ profile }: { profile: PublicProfile }) {
         friendCode={profile.friendCode}
         signature={profile.signature}
         badges={profile.badges}
+        coverImage={showcaseProducts[0]?.art.bannerUrl}
         actions={
           <span className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-2.5 py-1.5 text-xs text-dim" title="在好友面板用好友码添加">
             <UserPlus className="size-3.5" /> 好友码 {profile.friendCode}
@@ -151,8 +160,8 @@ async function PublicProfileView({ profile }: { profile: PublicProfile }) {
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_300px]">
         <div className="min-w-0 space-y-6">
-          <FavoriteShowcase products={showcaseProducts} />
-          <AchievementShowcase achievements={achievements} total={unlockCount} />
+          <Reveal><FavoriteShowcase products={showcaseProducts} /></Reveal>
+          <Reveal delay={0.05}><AchievementShowcase achievements={achievements} total={unlockCount} /></Reveal>
         </div>
         <aside className="space-y-4">
           <StatGrid
@@ -179,6 +188,7 @@ function ProfileHeader({
   signature,
   badges,
   online,
+  coverImage,
   actions,
 }: {
   name: string;
@@ -190,11 +200,22 @@ function ProfileHeader({
   signature: string;
   badges: { label: string; icon: string }[];
   online?: boolean;
+  coverImage?: string;
   actions: React.ReactNode;
 }) {
   return (
     <>
-      <div className={`-mx-4 h-40 ${BANNER} sm:-mx-6`} />
+      <div className="relative -mx-4 h-44 overflow-hidden sm:-mx-6">
+        {coverImage ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={coverImage} alt="" className="size-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-t from-page via-page/35 to-page/5" />
+          </>
+        ) : (
+          <div className={`size-full ${BANNER}`} />
+        )}
+      </div>
       <header className="relative z-10 -mt-12 flex flex-wrap items-end gap-5">
         <span className="relative rounded-2xl bg-panel p-1 shadow-[0_2px_12px_-4px_rgb(28_36_51/.2)]">
           <Avatar name={name} hue={avatarHue} src={avatarUrl} size="xl" className="rounded-2xl [&>img]:rounded-2xl [&>span]:rounded-2xl" />
@@ -268,14 +289,3 @@ function CommentWall({ posts }: { posts: { author: string; avatarHue: number; bo
   );
 }
 
-function ProductMini({ hueA, hueB, icon }: { slug: string; hueA: number; hueB: number; icon: string }) {
-  const Icon = getProductIcon(icon);
-  return (
-    <span
-      className="flex aspect-[16/9] items-center justify-center"
-      style={{ background: `linear-gradient(135deg, hsl(${hueA} 60% 86%), hsl(${hueB} 55% 76%))` }}
-    >
-      <Icon className="size-1/3" style={{ color: `hsl(${hueA} 45% 38%)` }} />
-    </span>
-  );
-}
