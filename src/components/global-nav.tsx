@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Coins, Search, Settings, Shield, Zap } from "lucide-react";
+import { Coins, Plus, Search, Settings, Shield, Zap } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/cn";
 
@@ -89,14 +89,19 @@ export function GlobalNav({ user }: GlobalNavProps) {
 
           {user ? (
             <>
-              {/* 点数余额 */}
-              <span
-                className="hidden items-center gap-1 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-dim sm:flex"
-                title="点数余额（用于购买产品）"
+              {/* 点数余额 → 钱包/充值 */}
+              <Link
+                href="/wallet"
+                className={cn(
+                  "hidden items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors sm:flex",
+                  pathname.startsWith("/wallet") ? "border-accent/50 text-accent" : "border-line text-dim hover:border-accent/50 hover:text-accent",
+                )}
+                title="钱包 · 充值"
               >
                 <Coins className="size-3.5 text-gold" />
                 {user.credits.toLocaleString("zh-CN")}
-              </span>
+                <Plus className="size-3 opacity-60" />
+              </Link>
 
               {/* 用量额度 → 用量看板 */}
               <Link

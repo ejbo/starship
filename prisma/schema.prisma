@@ -48,6 +48,7 @@ model User {
   presenceKind String          @default("offline")
   presenceDetail String?
   library      LibraryEntry[]
+  creditTxns   CreditTransaction[]
   friendsOut   FriendEdge[]    @relation("FriendA")
   friendsIn    FriendEdge[]    @relation("FriendB")
   credentials  ApiCredential[]
@@ -313,6 +314,27 @@ model ActivityEvent {
   /// Phase 1a 保留展示字符串（"12 分钟前"），Phase 1b 迁 DateTime
   at           String
   sort         Int
+}
+
+/// 点数交易流水（充值/购买/退款）。支付为占位——真实支付网关待接入。
+model CreditTransaction {
+  id           String  @id @default(cuid())
+  userId       String
+  /// topup 充值 | purchase 购买 | refund 退款
+  kind         String
+  /// 正=入账（充值/退款），负=支出（购买）
+  amount       Int
+  /// 交易后余额
+  balanceAfter Int
+  note         String  @default("")
+  /// 充值方式（wechat/alipay/card/demo）
+  method       String?
+  /// 关联产品 slug（购买/退款时）
+  productSlug  String?
+  createdAt    String
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 /// 首页顶部大活动横幅（管理员后台可编辑/上下架/排序）

@@ -34,12 +34,19 @@ export async function acquire(slug: string): Promise<void> {
     });
     if (existing) return;
 
-    // 付费：扣点数
+    // 付费：扣点数 + 记一笔购买流水
     const price = product.priceCredits ?? 0;
     if (price > 0) {
       const me = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { credits: true } });
       if (me.credits < price) throw new Error(`点数不足（需 ${price}，余 ${me.credits}）`);
-      await tx.user.update({ where: { id: userId }, data: { credits: { decrement: price } } });
+      const after = await tx.user.update({
+        where: { id: userId },
+        data: { credits: { decrement: price } },
+        select: { credits: true },
+      });
+      await tx.creditTransaction.create({
+        data: { userId, kind: "purchase", amount: -price, balanceAfter: after.credits, productSlug: slug, note: "购买产品", createdAt: new Date().toISOString() },
+      });
     }
 
     await tx.libraryEntry.create({
@@ -67,7 +74,16 @@ export async function removeFromLibrary(slug: string): Promise<void> {
     if (deleted.count > 0) {
       await tx.product.update({ where: { id: product.id }, data: { acquisitions: { decrement: 1 } } });
       const price = product.priceCredits ?? 0;
-      if (price > 0) await tx.user.update({ where: { id: userId }, data: { credits: { increment: price } } });
+      if (price > 0) {
+        const after = await tx.user.update({
+          where: { id: userId },
+          data: { credits: { increment: price } },
+          select: { credits: true },
+        });
+        await tx.creditTransaction.create({
+          data: { userId, kind: "refund", amount: price, balanceAfter: after.credits, productSlug: slug, note: "移出库退款", createdAt: new Date().toISOString() },
+        });
+      }
     }
   });
 }

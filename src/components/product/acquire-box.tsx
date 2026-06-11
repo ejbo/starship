@@ -92,9 +92,15 @@ export function AcquireBox({ product, acquired, signedOut, credits = 0 }: Acquir
               </>
             )}
           </button>
-          {!free && (
+          {!free && !isAcquired && (
             <p className="-mt-2 text-center text-[11px] text-mute">
-              余额 {balance.toLocaleString("zh-CN")} 点数{!canAfford && !isAcquired && " · 不足"}
+              余额 {balance.toLocaleString("zh-CN")} 点数
+              {!canAfford && (
+                <>
+                  {" · 不足，"}
+                  <Link href="/wallet" className="font-medium text-accent hover:underline">去充值</Link>
+                </>
+              )}
             </p>
           )}
           {error && <p className="-mt-2 text-center text-xs text-danger">{error}</p>}
