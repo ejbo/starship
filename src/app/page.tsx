@@ -5,12 +5,13 @@ import { PromoBanner } from "@/components/store/promo-banner";
 import { SectionRow } from "@/components/store/section-row";
 import { StoreSubnav } from "@/components/store/store-subnav";
 import { TopCharts } from "@/components/store/top-charts";
+import { getActiveBanners } from "@/lib/admin-service";
 import { getAllProducts, getByType, getDiscoveryQueue, getFeatured } from "@/lib/catalog";
 
 export const dynamic = "force-dynamic";
 
 export default async function StorePage() {
-  const [featured, discovery, all, apps, models, agents, skills, tutorials, videos] = await Promise.all([
+  const [featured, discovery, all, apps, models, agents, skills, tutorials, videos, banners] = await Promise.all([
     getFeatured(),
     getDiscoveryQueue(),
     getAllProducts(),
@@ -20,6 +21,7 @@ export default async function StorePage() {
     getByType("skill"),
     getByType("tutorial"),
     getByType("video"),
+    getActiveBanners(),
   ]);
 
   const byNewest = [...all].sort((a, b) => b.releasedAt.localeCompare(a.releasedAt));
@@ -40,7 +42,15 @@ export default async function StorePage() {
     <>
       <StoreSubnav />
       <main className="mx-auto max-w-7xl space-y-10 px-4 pt-6 sm:px-6">
-        <PromoBanner />
+        <PromoBanner
+          banners={banners.map((b) => ({
+            title: b.title,
+            subtitle: b.subtitle,
+            badge: b.badge,
+            imageUrl: b.imageUrl,
+            href: b.href,
+          }))}
+        />
         <HeroCarousel products={featured} ranks={ranks} />
         <CategoryTiles />
         <div id="discovery" className="scroll-mt-28">

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Coins, Search, Settings, Zap } from "lucide-react";
+import { Coins, Search, Settings, Shield, Zap } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/cn";
 
@@ -13,7 +13,7 @@ const navLinks = [
 ] as const;
 
 interface GlobalNavProps {
-  user: { name: string; avatarHue: number; avatarUrl: string | null; tokenBalance: string; credits: number } | null;
+  user: { name: string; avatarHue: number; avatarUrl: string | null; tokenBalance: string; credits: number; isAdmin?: boolean } | null;
 }
 
 export function GlobalNav({ user }: GlobalNavProps) {
@@ -58,6 +58,18 @@ export function GlobalNav({ user }: GlobalNavProps) {
               )}
             >
               开发者中心
+            </Link>
+          )}
+          {user?.isAdmin && (
+            <Link
+              href="/admin"
+              className={cn(
+                "flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                pathname.startsWith("/admin") ? "bg-accent/8 text-accent" : "text-dim hover:bg-card-hi hover:text-ink",
+              )}
+            >
+              <Shield className="size-3.5" />
+              管理后台
             </Link>
           )}
         </nav>

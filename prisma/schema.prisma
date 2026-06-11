@@ -314,3 +314,17 @@ model ActivityEvent {
   at           String
   sort         Int
 }
+
+/// 首页顶部大活动横幅（管理员后台可编辑/上下架/排序）
+model Banner {
+  id        String  @id @default(cuid())
+  title     String
+  subtitle  String  @default("")
+  /// 小标签，如"限时 · 即日起至 6 月 30 日"
+  badge     String  @default("")
+  imageUrl  String
+  href      String  @default("/#featured")
+  active    Boolean @default(true)
+  sort      Int     @default(0)
+  createdAt String
+}
