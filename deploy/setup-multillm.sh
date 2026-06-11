@@ -11,7 +11,7 @@ PORT="${MULTILLM_PORT:-4000}"
 SP_PORT="${STARPORT_PORT:-3000}"
 CLIENT_ID="${MULTILLM_CLIENT_ID:-app_multillm}"
 CLIENT_SECRET="${MULTILLM_CLIENT_SECRET:-sk_app_multillm_demo}"
-REPO="${MULTILLM_REPO:-https://github.com/ejbo/multillm-starport.git}"
+REPO="${MULTILLM_REPO:-git@github.com:ejbo/multillm-starport.git}"
 DIR="${MULTILLM_DIR:-$HOME/projects/multillm-starport}"
 
 SELF_BASE="http://$IP:$PORT"
