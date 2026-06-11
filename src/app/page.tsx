@@ -6,12 +6,12 @@ import { SectionRow } from "@/components/store/section-row";
 import { StoreSubnav } from "@/components/store/store-subnav";
 import { TopCharts } from "@/components/store/top-charts";
 import { getActiveBanners } from "@/lib/admin-service";
-import { getAllProducts, getByType, getDiscoveryQueue, getFeatured } from "@/lib/catalog";
+import { getAllProducts, getByType, getDiscounted, getDiscoveryQueue, getFeatured } from "@/lib/catalog";
 
 export const dynamic = "force-dynamic";
 
 export default async function StorePage() {
-  const [featured, discovery, all, apps, models, agents, skills, tutorials, videos, banners] = await Promise.all([
+  const [featured, discovery, all, apps, models, agents, skills, tutorials, videos, banners, discounted] = await Promise.all([
     getFeatured(),
     getDiscoveryQueue(),
     getAllProducts(),
@@ -22,6 +22,7 @@ export default async function StorePage() {
     getByType("tutorial"),
     getByType("video"),
     getActiveBanners(),
+    getDiscounted(),
   ]);
 
   const byNewest = [...all].sort((a, b) => b.releasedAt.localeCompare(a.releasedAt));
@@ -52,6 +53,7 @@ export default async function StorePage() {
           }))}
         />
         <HeroCarousel products={featured} ranks={ranks} />
+        {discounted.length > 0 && <SectionRow title="限时特惠" products={discounted} />}
         <CategoryTiles />
         <div id="discovery" className="scroll-mt-28">
           <DiscoveryQueue products={discovery} />

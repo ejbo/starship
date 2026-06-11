@@ -138,6 +138,8 @@ model Product {
   launchMode   String   @default("embedded")
   /// null = 免费
   priceCredits Int?
+  /// 限时折扣百分比（0-90）；>0 时商店显示原价划线 + 折后价 + "-X%"
+  discountPct  Int      @default(0)
   capabilities String[]
   releasedAt   String
   updatedAt    String

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { priceView as priceOf } from "@/lib/price";
 import { getSessionUserIdOrNull } from "@/lib/session";
 import { getFriendsWithPresence } from "@/lib/friends-service";
 import { activity as mockActivity, liveRoundtables } from "@/lib/mock/activity";
@@ -62,7 +63,7 @@ function toProduct(p: DbProductWithReviews): Product {
     entry: p.entryUrl
       ? { kind: "sandbox", url: p.entryUrl, launchMode: p.launchMode === "newtab" ? "newtab" : "embedded" }
       : undefined,
-    price: p.priceCredits == null ? "free" : { credits: p.priceCredits },
+    price: priceOf(p.priceCredits, p.discountPct),
     capabilities: p.capabilities,
     releasedAt: p.releasedAt,
     updatedAt: p.updatedAt,
@@ -88,6 +89,16 @@ export async function getFeatured(): Promise<Product[]> {
     where: { ...PUBLISHED, featured: true },
     include: withReviews,
     orderBy: { acquisitions: "desc" },
+  });
+  return rows.map(toProduct);
+}
+
+/** 限时特惠：有折扣的已上架产品 */
+export async function getDiscounted(): Promise<Product[]> {
+  const rows = await prisma.product.findMany({
+    where: { ...PUBLISHED, discountPct: { gt: 0 } },
+    include: withReviews,
+    orderBy: { discountPct: "desc" },
   });
   return rows.map(toProduct);
 }

@@ -25,7 +25,8 @@ export function AcquireBox({ product, acquired, signedOut, credits = 0, wishlist
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const free = product.price === "free";
-  const price = free ? 0 : (product.price as { credits: number }).credits;
+  const priceObj = free ? null : (product.price as { credits: number; original?: number; discountPct?: number });
+  const price = priceObj?.credits ?? 0;
   const canAfford = free || balance >= price;
 
   const act = () => {
@@ -53,6 +54,14 @@ export function AcquireBox({ product, acquired, signedOut, credits = 0, wishlist
         <span className="text-sm text-dim">{free ? "价格" : "解锁"}</span>
         {free ? (
           <span className="font-semibold text-free">免费</span>
+        ) : priceObj?.discountPct ? (
+          <span className="flex items-center gap-2">
+            <span className="rounded bg-[#4c6b22] px-1.5 py-0.5 text-xs font-bold text-[#a4d007]">-{priceObj.discountPct}%</span>
+            <span className="text-sm text-mute line-through">{priceObj.original}</span>
+            <span className="flex items-center gap-1 font-semibold text-ink">
+              <Coins className="size-4 text-gold" /> {price}
+            </span>
+          </span>
         ) : (
           <span className="flex items-center gap-1 font-semibold text-ink">
             <Coins className="size-4 text-gold" /> {price} 点数

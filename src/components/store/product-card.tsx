@@ -6,11 +6,17 @@ import { cn } from "@/lib/cn";
 import type { Product } from "@/lib/types";
 
 export function PriceTag({ price, className }: { price: Product["price"]; className?: string }) {
-  return price === "free" ? (
-    <span className={cn("text-xs font-medium text-free", className)}>免费</span>
-  ) : (
-    <span className={cn("text-xs font-medium text-dim", className)}>{price.credits} 点数</span>
-  );
+  if (price === "free") return <span className={cn("text-xs font-medium text-free", className)}>免费</span>;
+  if (price.discountPct) {
+    return (
+      <span className={cn("flex items-center gap-1.5 text-xs", className)}>
+        <span className="rounded bg-[#4c6b22] px-1 py-0.5 text-[11px] font-bold leading-none text-[#a4d007]">-{price.discountPct}%</span>
+        <span className="text-mute line-through">{price.original}</span>
+        <span className="font-semibold text-ink">{price.credits} 点数</span>
+      </span>
+    );
+  }
+  return <span className={cn("text-xs font-medium text-dim", className)}>{price.credits} 点数</span>;
 }
 
 export function ProductCard({ product, className }: { product: Product; className?: string }) {

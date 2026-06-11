@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
+import { effectivePrice } from "@/lib/price";
 import { getSessionUserId } from "@/lib/session";
 
 /** 开发者收益分成比例（Steam 式 70/30，开发者得 70%） */
@@ -26,7 +27,7 @@ export async function acquire(slug: string): Promise<void> {
   const userId = await getSessionUserId();
   const product = await prisma.product.findUnique({
     where: { slug },
-    select: { id: true, priceCredits: true, ownerUserId: true },
+    select: { id: true, priceCredits: true, discountPct: true, ownerUserId: true },
   });
   if (!product) throw new Error("产品不存在");
 
@@ -37,8 +38,8 @@ export async function acquire(slug: string): Promise<void> {
     });
     if (existing) return;
 
-    // 付费：扣点数 + 记一笔购买流水
-    const price = product.priceCredits ?? 0;
+    // 付费：按折后价扣点数 + 记一笔购买流水
+    const price = product.priceCredits == null ? 0 : effectivePrice(product.priceCredits, product.discountPct ?? 0);
     if (price > 0) {
       const me = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { credits: true } });
       if (me.credits < price) throw new Error(`点数不足（需 ${price}，余 ${me.credits}）`);
@@ -51,7 +52,7 @@ export async function acquire(slug: string): Promise<void> {
         data: { userId, kind: "purchase", amount: -price, balanceAfter: after.credits, productSlug: slug, note: "购买产品", createdAt: new Date().toISOString() },
       });
 
-      // 收益分成：开发者得 70%（平台留 30%）。买自己应用不分成。
+      // 收益分成：开发者得折后价的 70%（平台留 30%）。买自己应用不分成。
       const share = Math.floor(price * DEV_SHARE);
       if (product.ownerUserId && product.ownerUserId !== userId && share > 0) {
         const ownerAfter = await tx.user.update({
@@ -82,14 +83,14 @@ export async function getMyCredits(): Promise<number> {
 /** 移出库：acquisitions--，付费产品退还点数（原型行为） */
 export async function removeFromLibrary(slug: string): Promise<void> {
   const userId = await getSessionUserId();
-  const product = await prisma.product.findUnique({ where: { slug }, select: { id: true, priceCredits: true, ownerUserId: true } });
+  const product = await prisma.product.findUnique({ where: { slug }, select: { id: true, priceCredits: true, discountPct: true, ownerUserId: true } });
   if (!product) return;
 
   await prisma.$transaction(async (tx) => {
     const deleted = await tx.libraryEntry.deleteMany({ where: { userId, productId: product.id } });
     if (deleted.count > 0) {
       await tx.product.update({ where: { id: product.id }, data: { acquisitions: { decrement: 1 } } });
-      const price = product.priceCredits ?? 0;
+      const price = product.priceCredits == null ? 0 : effectivePrice(product.priceCredits, product.discountPct ?? 0);
       if (price > 0) {
         const after = await tx.user.update({
           where: { id: userId },

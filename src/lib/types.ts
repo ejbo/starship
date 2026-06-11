@@ -47,7 +47,8 @@ export interface Product {
   version?: string;
   /** 应用入口：平台沙箱加载的外部部署地址 */
   entry?: { kind: "sandbox"; url: string; launchMode?: "embedded" | "newtab" };
-  price: "free" | { credits: number };
+  /** credits=折后实付价；original/discountPct 存在表示限时折扣 */
+  price: "free" | { credits: number; original?: number; discountPct?: number };
   /** 预告视频地址（详情页播放器用） */
   trailerUrl?: string;
   /** 运行环境声明，如 llm:claude / storage:1gb / social:friends */

@@ -69,6 +69,7 @@ export interface AdminProductInput {
   tags: string[];
   capabilities: string[];
   priceCredits: number | null;
+  discountPct: number;
   icon: string;
   hueA: number;
   hueB: number;
@@ -96,6 +97,7 @@ export async function updateProductAdmin(id: string, input: AdminProductInput) {
       tags: input.tags,
       capabilities: input.capabilities,
       priceCredits: input.priceCredits,
+      discountPct: Math.max(0, Math.min(90, Math.round(input.discountPct) || 0)),
       icon: input.icon,
       hueA: input.hueA,
       hueB: input.hueB,

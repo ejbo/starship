@@ -42,6 +42,7 @@ export function AdminProductForm({ product }: { product: DbProduct }) {
   const [tagsText, setTagsText] = useState(product.tags.join(", "));
   const [capsText, setCapsText] = useState(product.capabilities.join(", "));
   const [priceText, setPriceText] = useState(product.priceCredits == null ? "" : String(product.priceCredits));
+  const [discountText, setDiscountText] = useState(product.discountPct ? String(product.discountPct) : "");
   const [icon, setIcon] = useState(product.icon);
   const [hueA, setHueA] = useState(product.hueA);
   const [hueB, setHueB] = useState(product.hueB);
@@ -67,6 +68,7 @@ export function AdminProductForm({ product }: { product: DbProduct }) {
       tags: splitList(tagsText),
       capabilities: splitList(capsText),
       priceCredits: priceText.trim() === "" ? null : Math.max(0, Math.round(Number(priceText) || 0)),
+      discountPct: discountText.trim() === "" ? 0 : Math.max(0, Math.min(90, Math.round(Number(discountText) || 0))),
       icon: icon.trim() || "grid",
       hueA: Number(hueA) || 0,
       hueB: Number(hueB) || 0,
@@ -151,6 +153,7 @@ export function AdminProductForm({ product }: { product: DbProduct }) {
             </select>
           </L>
           <L label="价格" hint="空=免费"><input value={priceText} onChange={(e) => setPriceText(e.target.value)} className={inputCls} placeholder="点数" /></L>
+          <L label="折扣 %" hint="0-90，限时特惠"><input value={discountText} onChange={(e) => setDiscountText(e.target.value)} className={inputCls} placeholder="0" /></L>
         </div>
         <L label="入口 URL" hint="应用部署地址，可空"><input value={entryUrl} onChange={(e) => setEntryUrl(e.target.value)} className={inputCls} /></L>
         <L label="运行要求" hint="逗号分隔，如 llm:claude, storage:1gb"><input value={capsText} onChange={(e) => setCapsText(e.target.value)} className={inputCls} /></L>
