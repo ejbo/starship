@@ -27,7 +27,7 @@ export async function acquire(slug: string): Promise<void> {
   const userId = await getSessionUserId();
   const product = await prisma.product.findUnique({
     where: { slug },
-    select: { id: true, priceCredits: true, discountPct: true, ownerUserId: true },
+    select: { id: true, name: true, priceCredits: true, discountPct: true, ownerUserId: true },
   });
   if (!product) throw new Error("产品不存在");
 
@@ -62,6 +62,9 @@ export async function acquire(slug: string): Promise<void> {
         });
         await tx.creditTransaction.create({
           data: { userId: product.ownerUserId, kind: "earning", amount: share, balanceAfter: ownerAfter.credits, productSlug: slug, note: "应用销售分成", createdAt: new Date().toISOString() },
+        });
+        await tx.notification.create({
+          data: { userId: product.ownerUserId, kind: "earning", title: `应用售出：${product.name}`, body: `收益 +${share} 点数`, href: "/wallet", read: false, createdAt: new Date().toISOString() },
         });
       }
     }

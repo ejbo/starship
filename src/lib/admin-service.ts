@@ -1,6 +1,7 @@
 import "server-only";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { notify } from "@/lib/notification-service";
 import { getSessionUserIdOrNull } from "@/lib/session";
 
 /** 当前用户是管理员则返回其 id，否则 null */
@@ -46,7 +47,17 @@ export async function listAllProductsAdmin() {
 
 export async function setProductPublished(id: string, published: boolean) {
   await requireAdmin();
+  const before = await prisma.product.findUnique({ where: { id }, select: { ownerUserId: true, name: true, slug: true, status: true } });
   await prisma.product.update({ where: { id }, data: { status: published ? "published" : "draft" } });
+  // 审核结果通知开发者（仅当从「待审核」转出时）
+  if (before?.ownerUserId && before.status === "pending") {
+    await notify(
+      before.ownerUserId,
+      published
+        ? { kind: "review", title: `应用已通过审核：${before.name}`, body: "已在商店上架。", href: `/p/${before.slug}` }
+        : { kind: "review", title: `应用审核未通过：${before.name}`, body: "已退回草稿，完善后可再次提交。", href: `/developer/${id}` },
+    );
+  }
 }
 
 export async function setProductFeatured(id: string, featured: boolean) {

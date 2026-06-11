@@ -50,6 +50,7 @@ model User {
   library      LibraryEntry[]
   wishlist     WishlistEntry[]
   creditTxns   CreditTransaction[]
+  notifications Notification[]
   friendsOut   FriendEdge[]    @relation("FriendA")
   friendsIn    FriendEdge[]    @relation("FriendB")
   credentials  ApiCredential[]
@@ -333,6 +334,22 @@ model ActivityEvent {
   /// Phase 1a 保留展示字符串（"12 分钟前"），Phase 1b 迁 DateTime
   at           String
   sort         Int
+}
+
+/// 站内通知（审核结果、收益、好友请求等）
+model Notification {
+  id        String  @id @default(cuid())
+  userId    String
+  /// review | earning | friend | system
+  kind      String
+  title     String
+  body      String  @default("")
+  href      String?
+  read      Boolean @default(false)
+  createdAt String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 /// 点数交易流水（充值/购买/退款）。支付为占位——真实支付网关待接入。

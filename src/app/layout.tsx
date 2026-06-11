@@ -4,6 +4,7 @@ import { GlobalNav } from "@/components/global-nav";
 import { SiteFooter } from "@/components/site-footer";
 import { getCurrentUser } from "@/lib/catalog";
 import { getFriendsWithPresence, getIncomingRequests, getMyFriendCode, touchPresence } from "@/lib/friends-service";
+import { getUnreadCount } from "@/lib/notification-service";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,15 +17,15 @@ export default async function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const user = await getCurrentUser();
   if (user) await touchPresence();
-  const [friends, requests, myCode] = user
-    ? await Promise.all([getFriendsWithPresence(), getIncomingRequests(), getMyFriendCode()])
-    : [[], [], null];
+  const [friends, requests, myCode, unread] = user
+    ? await Promise.all([getFriendsWithPresence(), getIncomingRequests(), getMyFriendCode(), getUnreadCount()])
+    : [[], [], null, 0];
 
   return (
     <html lang="zh-CN">
       <body className="antialiased">
         <GlobalNav
-          user={user ? { name: user.name, avatarHue: user.avatarHue, avatarUrl: user.avatarUrl, tokenBalance: user.tokenBalance, credits: user.credits, isAdmin: user.isAdmin } : null}
+          user={user ? { name: user.name, avatarHue: user.avatarHue, avatarUrl: user.avatarUrl, tokenBalance: user.tokenBalance, credits: user.credits, isAdmin: user.isAdmin, unread } : null}
         />
         <div className="min-h-[70vh]">{children}</div>
         <SiteFooter />

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Coins, Heart, Menu, Plus, Search, Settings, Shield, X, Zap } from "lucide-react";
+import { Bell, Coins, Heart, Menu, Plus, Search, Settings, Shield, X, Zap } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/cn";
 
@@ -14,7 +14,7 @@ const navLinks = [
 ] as const;
 
 interface GlobalNavProps {
-  user: { name: string; avatarHue: number; avatarUrl: string | null; tokenBalance: string; credits: number; isAdmin?: boolean } | null;
+  user: { name: string; avatarHue: number; avatarUrl: string | null; tokenBalance: string; credits: number; isAdmin?: boolean; unread?: number } | null;
 }
 
 export function GlobalNav({ user }: GlobalNavProps) {
@@ -129,6 +129,23 @@ export function GlobalNav({ user }: GlobalNavProps) {
                 {user.tokenBalance} tokens
               </Link>
 
+              {/* 通知铃 */}
+              <Link
+                href="/notifications"
+                className={cn(
+                  "relative rounded-md p-2 transition-colors",
+                  pathname.startsWith("/notifications") ? "bg-accent/8 text-accent" : "text-dim hover:bg-card-hi hover:text-ink",
+                )}
+                title="通知"
+              >
+                <Bell className="size-4.5" />
+                {(user.unread ?? 0) > 0 && (
+                  <span className="absolute right-0.5 top-0.5 flex min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[9px] font-bold leading-4 text-white">
+                    {Math.min(user.unread ?? 0, 99)}
+                  </span>
+                )}
+              </Link>
+
               {/* 配置中心 */}
               <Link
                 href="/settings/gateway"
@@ -166,6 +183,7 @@ export function GlobalNav({ user }: GlobalNavProps) {
               { href: "/community", label: "社区", icon: null },
               ...(user
                 ? [
+                    { href: "/notifications", label: "通知", icon: Bell },
                     { href: "/wishlist", label: "心愿单", icon: Heart },
                     { href: "/wallet", label: "钱包", icon: Coins },
                     { href: "/developer", label: "开发者中心", icon: null },
