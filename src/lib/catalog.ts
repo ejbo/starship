@@ -45,8 +45,16 @@ function toProduct(p: DbProductWithReviews): Product {
     name: p.name,
     tagline: p.tagline,
     description: p.description,
-    art: { hueA: p.hueA, hueB: p.hueB, icon: p.icon },
+    art: {
+      hueA: p.hueA,
+      hueB: p.hueB,
+      icon: p.icon,
+      capsuleUrl: p.capsuleUrl ?? undefined,
+      bannerUrl: p.bannerUrl ?? undefined,
+      screenshots: p.screenshotUrls?.length ? p.screenshotUrls : undefined,
+    },
     tags: p.tags,
+    trailerUrl: p.trailerUrl ?? undefined,
     rating: { score: p.ratingScore, count: p.ratingCount, histogram: p.histogram },
     acquisitions: p.acquisitions,
     developer: p.developer,
@@ -119,6 +127,7 @@ export interface LibraryItem {
   acquiredAt: string;
   lastUsedAt?: string;
   usageHours: number;
+  usageMinutes: number;
 }
 
 async function getMeRecord() {
@@ -140,6 +149,7 @@ export async function getLibrary(): Promise<LibraryItem[]> {
     acquiredAt: e.acquiredAt,
     lastUsedAt: e.lastUsedAt ?? undefined,
     usageHours: e.usageHours,
+    usageMinutes: e.usageMinutes,
   }));
 }
 
@@ -154,7 +164,7 @@ export interface CurrentUserView {
   showcase: string[];
   tokenBalance: string;
   credits: number;
-  library: { slug: string; acquiredAt: string; lastUsedAt?: string; usageHours: number }[];
+  library: { slug: string; acquiredAt: string; lastUsedAt?: string; usageHours: number; usageMinutes: number }[];
 }
 
 /** 未登录返回 null */
@@ -183,6 +193,7 @@ export async function getCurrentUser(): Promise<CurrentUserView | null> {
         acquiredAt: e.acquiredAt,
         lastUsedAt: e.lastUsedAt ?? undefined,
         usageHours: e.usageHours,
+        usageMinutes: e.usageMinutes,
       }))
       .sort((a, b) => (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? "")),
   };

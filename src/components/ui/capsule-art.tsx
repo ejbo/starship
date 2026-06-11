@@ -14,15 +14,30 @@ interface CapsuleArtProps {
   ratio?: keyof typeof ratios;
   className?: string;
   iconClassName?: string;
-  /** 同一产品的"截图"变体：渐变角度/明度偏移模拟不同画面 */
+  /** 同一产品的"截图"变体：>0 时优先取 screenshots[variant-1] */
   variant?: number;
 }
 
-/** 程序化封面：柔和双色渐变 + 图标，替代真实图片素材 */
+/** 选图：截图变体 > banner（宽幅）> 方形封面 > banner 兜底 */
+function pickImage(art: ProductArt, ratio: keyof typeof ratios, variant: number): string | undefined {
+  if (variant > 0 && art.screenshots?.length) {
+    return art.screenshots[(variant - 1) % art.screenshots.length];
+  }
+  if (ratio === "banner" || ratio === "wide") {
+    return art.bannerUrl ?? art.capsuleUrl ?? art.screenshots?.[0];
+  }
+  return art.capsuleUrl ?? art.bannerUrl ?? art.screenshots?.[0];
+}
+
+/**
+ * 产品封面：有真实媒体则铺图（object-cover），否则渐变色块 + 图标。
+ * 渐变始终作为底色——即使图片加载失败也不会露白。
+ */
 export function CapsuleArt({ art, ratio = "wide", className, iconClassName, variant = 0 }: CapsuleArtProps) {
   const Icon = getProductIcon(art.icon);
   const angle = 135 + variant * 40;
   const { hueA, hueB } = art;
+  const img = pickImage(art, ratio, variant);
 
   return (
     <div
@@ -35,11 +50,22 @@ export function CapsuleArt({ art, ratio = "wide", className, iconClassName, vari
         background: `linear-gradient(${angle}deg, hsl(${hueA} 60% ${88 - variant * 3}%), hsl(${hueB} 55% ${76 - variant * 3}%))`,
       }}
     >
-      <Icon
-        strokeWidth={1.5}
-        className={cn("relative size-[30%] max-h-16", iconClassName)}
-        style={{ color: `hsl(${hueA} 45% 36%)` }}
-      />
+      {img ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={img}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="absolute inset-0 size-full object-cover"
+        />
+      ) : (
+        <Icon
+          strokeWidth={1.5}
+          className={cn("relative size-[30%] max-h-16", iconClassName)}
+          style={{ color: `hsl(${hueA} 45% 36%)` }}
+        />
+      )}
     </div>
   );
 }

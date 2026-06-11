@@ -5,6 +5,10 @@ export interface ProductArt {
   hueA: number;
   hueB: number;
   icon: string;
+  /** 真实媒体（有则优先于渐变色块）：方形封面 / 宽幅 banner / 截图集 */
+  capsuleUrl?: string;
+  bannerUrl?: string;
+  screenshots?: string[];
 }
 
 export interface Review {
@@ -44,6 +48,8 @@ export interface Product {
   /** 应用入口：平台沙箱加载的外部部署地址 */
   entry?: { kind: "sandbox"; url: string; launchMode?: "embedded" | "newtab" };
   price: "free" | { credits: number };
+  /** 预告视频地址（详情页播放器用） */
+  trailerUrl?: string;
   /** 运行环境声明，如 llm:claude / storage:1gb / social:friends */
   capabilities: string[];
   releasedAt: string;

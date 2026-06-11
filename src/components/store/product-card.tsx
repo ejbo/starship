@@ -28,6 +28,15 @@ export function ProductCard({ product, className }: { product: Product; classNam
           <TypeBadge type={product.type} />
         </div>
         <p className="truncate text-xs text-dim">{product.tagline}</p>
+        {product.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 pt-0.5">
+            {product.tags.slice(0, 3).map((tag) => (
+              <span key={tag} className="rounded bg-card-hi px-1.5 py-0.5 text-[10px] text-dim">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex items-center justify-between pt-0.5">
           <Rating score={product.rating.score} showVerdict={false} className="text-xs" />
           <PriceTag price={product.price} />

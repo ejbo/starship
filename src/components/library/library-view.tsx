@@ -7,15 +7,17 @@ import { CapsuleArt } from "@/components/ui/capsule-art";
 import { typeMeta } from "@/components/ui/type-badge";
 import { getProductIcon } from "@/lib/icons";
 import { cn } from "@/lib/cn";
-import type { ProductType } from "@/lib/types";
+import { formatPlaytime, formatPlaytimeShort } from "@/lib/playtime";
+import type { ProductArt, ProductType } from "@/lib/types";
 
 export interface LibItem {
   slug: string;
   name: string;
   type: ProductType;
-  art: { hueA: number; hueB: number; icon: string };
+  art: ProductArt;
   developer: string;
   usageHours: number;
+  usageMinutes: number;
   lastUsedAt: string | null;
   acquiredAt: string;
   hasEntry: boolean;
@@ -41,7 +43,7 @@ export function LibraryView({ items }: { items: LibItem[] }) {
     return m;
   }, [items]);
 
-  const totalHours = items.reduce((s, i) => s + i.usageHours, 0);
+  const totalMinutes = items.reduce((s, i) => s + i.usageMinutes, 0);
   const recent = [...items].sort((a, b) => (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? ""));
   const hero = recent[0];
   const recentStrip = recent.slice(1, 6);
@@ -51,7 +53,7 @@ export function LibraryView({ items }: { items: LibItem[] }) {
     if (activeType !== "all") list = list.filter((i) => i.type === activeType);
     list = [...list].sort((a, b) => {
       if (sort === "name") return a.name.localeCompare(b.name);
-      if (sort === "playtime") return b.usageHours - a.usageHours;
+      if (sort === "playtime") return b.usageMinutes - a.usageMinutes;
       return (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? "");
     });
     return list;
@@ -89,7 +91,7 @@ export function LibraryView({ items }: { items: LibItem[] }) {
         </div>
         <div className="rounded-lg border border-line p-3 text-xs text-mute">
           <p className="flex items-center gap-1.5">
-            <Clock className="size-3.5" /> 总时长 <span className="ml-auto font-semibold text-ink">{totalHours}h</span>
+            <Clock className="size-3.5" /> 总时长 <span className="ml-auto font-semibold text-ink">{formatPlaytime(totalMinutes)}</span>
           </p>
         </div>
       </aside>
@@ -107,7 +109,7 @@ export function LibraryView({ items }: { items: LibItem[] }) {
                 <span className="text-xs text-mute">{typeMeta[hero.type].label} · {hero.developer}</span>
                 <h3 className="text-xl font-bold">{hero.name}</h3>
                 <p className="flex items-center gap-1.5 text-sm text-dim">
-                  <Clock className="size-3.5" /> 累计 {hero.usageHours} 小时 · 最近 {hero.lastUsedAt}
+                  <Clock className="size-3.5" /> 累计 {formatPlaytime(hero.usageMinutes)} · 最近 {hero.lastUsedAt}
                 </p>
                 <Link href={launchHref(hero)} className="inline-flex w-fit items-center gap-1.5 rounded-md bg-accent px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-deep">
                   <Play className="size-4 fill-white" /> {hero.hasEntry ? "启动" : "打开"}
@@ -126,7 +128,7 @@ export function LibraryView({ items }: { items: LibItem[] }) {
                   <CapsuleArt art={i.art} ratio="wide" iconClassName="size-1/3" />
                   <div className="p-2">
                     <p className="truncate text-xs font-medium transition-colors group-hover:text-accent">{i.name}</p>
-                    <p className="text-[11px] text-mute">{i.usageHours}h</p>
+                    <p className="text-[11px] text-mute">{formatPlaytimeShort(i.usageMinutes)}</p>
                   </div>
                 </Link>
               ))}
@@ -168,7 +170,7 @@ export function LibraryView({ items }: { items: LibItem[] }) {
                   </div>
                   <div className="p-2.5">
                     <p className="truncate text-sm font-medium transition-colors group-hover:text-accent">{i.name}</p>
-                    <p className="mt-0.5 text-[11px] text-mute">{typeMeta[i.type].label} · {i.usageHours}h</p>
+                    <p className="mt-0.5 text-[11px] text-mute">{typeMeta[i.type].label} · {formatPlaytimeShort(i.usageMinutes)}</p>
                   </div>
                 </Link>
               ))}

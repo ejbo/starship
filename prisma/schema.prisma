@@ -28,6 +28,8 @@ model User {
   avatarHue    Int
   /// 上传头像（data URL，压缩后）；为空则用色相头像
   avatarUrl    String?
+  /// 平台管理员（可进 /admin 上架下架、设精选、编辑任意产品）
+  isAdmin      Boolean         @default(false)
   level        Int
   signature    String          @default("")
   tokenBalance String          @default("0")
@@ -108,6 +110,12 @@ model Product {
   hueA         Int
   hueB         Int
   icon         String
+  /// 真实媒体（有则优先于渐变色块）：方形封面 / 宽幅 banner / 截图集 / 预告片
+  capsuleUrl   String?
+  bannerUrl    String?
+  screenshotUrls String[] @default([])
+  /// 预告视频地址（mp4 直链或可嵌入的 URL）
+  trailerUrl   String?
   tags         String[]
   /// 展示用聚合（= base 社会证明 与平台内真实评测的混合值）
   ratingScore  Float
@@ -239,6 +247,8 @@ model LibraryEntry {
   acquiredAt String
   lastUsedAt String?
   usageHours Int     @default(0)
+  /// 更细粒度的累计使用时长（分钟）；UI 用它显示"X 分钟 / X 小时 Y 分钟"
+  usageMinutes Int   @default(0)
   user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 

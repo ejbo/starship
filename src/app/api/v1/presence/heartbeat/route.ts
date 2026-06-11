@@ -49,11 +49,12 @@ export async function POST(req: Request) {
     });
     const day = today();
     const hours = Math.floor(stat.value / 3600);
+    const minutes = Math.floor(stat.value / 60);
     // 没有库条目就建一条，否则使用时长无处显示（newtab 启动不一定走 acquire）。
     await prisma.libraryEntry.upsert({
       where: { userId_productId: { userId, productId } },
-      update: { usageHours: hours, lastUsedAt: day },
-      create: { userId, productId, acquiredAt: day, lastUsedAt: day, usageHours: hours },
+      update: { usageHours: hours, usageMinutes: minutes, lastUsedAt: day },
+      create: { userId, productId, acquiredAt: day, lastUsedAt: day, usageHours: hours, usageMinutes: minutes },
     });
   }
 

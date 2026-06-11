@@ -9,6 +9,7 @@ import {
 } from "@/components/profile/profile-blocks";
 import { Avatar } from "@/components/ui/avatar";
 import { getProductIcon } from "@/lib/icons";
+import { formatPlaytime, formatPlaytimeShort } from "@/lib/playtime";
 import { getBySlug, getCurrentUser, getFriends, getWallPosts } from "@/lib/catalog";
 import { countUserUnlocks, getUserAchievementShowcase } from "@/lib/achievement-service";
 import { getEditableProfile, getPublicProfile, type PublicProfile } from "@/lib/profile-service";
@@ -41,7 +42,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
   const showcaseProducts = (await Promise.all(user.showcase.map((slug) => getBySlug(slug)))).filter(
     (p): p is NonNullable<typeof p> => Boolean(p),
   );
-  const totalHours = user.library.reduce((sum, e) => sum + e.usageHours, 0);
+  const totalMinutes = user.library.reduce((sum, e) => sum + e.usageMinutes, 0);
   const recentEntries = [...user.library]
     .sort((a, b) => (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? ""))
     .slice(0, 4);
@@ -96,7 +97,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
                       </p>
                       <p className="text-xs text-mute">最近 {entry.lastUsedAt}</p>
                     </div>
-                    <span className="shrink-0 text-xs text-mute">{entry.usageHours}h</span>
+                    <span className="shrink-0 text-xs text-mute">{formatPlaytimeShort(entry.usageMinutes)}</span>
                   </li>
                 ) : null,
               )}
@@ -108,7 +109,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ handle
           <StatGrid
             stats={[
               { icon: LayoutGrid, label: "库中产品", value: String(user.library.length) },
-              { icon: Clock, label: "总时长", value: `${totalHours}h` },
+              { icon: Clock, label: "总时长", value: formatPlaytime(totalMinutes) },
               { icon: Trophy, label: "成就", value: String(unlockCount) },
               { icon: MessageSquare, label: "好友", value: String(friends.length) },
             ]}

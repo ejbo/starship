@@ -16,6 +16,7 @@ export default async function LibraryPage() {
     art: i.product.art,
     developer: i.product.developer,
     usageHours: i.usageHours,
+    usageMinutes: i.usageMinutes,
     lastUsedAt: i.lastUsedAt ?? null,
     acquiredAt: i.acquiredAt,
     hasEntry: Boolean(i.product.entry),

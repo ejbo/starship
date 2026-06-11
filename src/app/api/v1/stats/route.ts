@@ -38,9 +38,10 @@ export async function POST(req: Request) {
         where: { productId_userId_key: { productId, userId, key: "playtime_minutes" } },
         select: { value: true },
       });
+      const mins = total?.value ?? 0;
       await prisma.libraryEntry.update({
         where: { id: entry.id },
-        data: { usageHours: Math.floor((total?.value ?? 0) / 60), lastUsedAt: new Date().toISOString().slice(0, 10) },
+        data: { usageHours: Math.floor(mins / 60), usageMinutes: mins, lastUsedAt: new Date().toISOString().slice(0, 10) },
       });
     }
   }

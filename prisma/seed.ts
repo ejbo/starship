@@ -12,6 +12,7 @@ import { createCipheriv, randomBytes, scryptSync } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { products } from "../src/lib/mock/products";
+import { PRODUCT_MEDIA } from "./product-media";
 import { activity } from "../src/lib/mock/activity";
 import { currentUser, friends } from "../src/lib/mock/users";
 
@@ -84,6 +85,9 @@ async function main() {
         hueA: p.art.hueA,
         hueB: p.art.hueB,
         icon: p.art.icon,
+        capsuleUrl: PRODUCT_MEDIA[p.slug]?.capsuleUrl ?? null,
+        bannerUrl: PRODUCT_MEDIA[p.slug]?.bannerUrl ?? null,
+        screenshotUrls: PRODUCT_MEDIA[p.slug]?.screenshotUrls ?? [],
         tags: p.tags,
         ratingScore: p.rating.score,
         ratingCount: p.rating.count,
