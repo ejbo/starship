@@ -112,6 +112,19 @@ export async function getByType(type: ProductType): Promise<Product[]> {
   return rows.map(toProduct);
 }
 
+/** 更多同类：同类型的其他已上架产品，按获取量排序 */
+export async function getRelated(slug: string, limit = 6): Promise<Product[]> {
+  const self = await prisma.product.findUnique({ where: { slug }, select: { id: true, type: true } });
+  if (!self) return [];
+  const rows = await prisma.product.findMany({
+    where: { ...PUBLISHED, type: self.type, id: { not: self.id } },
+    include: withReviews,
+    orderBy: { acquisitions: "desc" },
+    take: limit,
+  });
+  return rows.map(toProduct);
+}
+
 export async function getBySlug(slug: string): Promise<Product | undefined> {
   const row = await prisma.product.findUnique({ where: { slug }, include: withReviews });
   return row ? toProduct(row) : undefined;

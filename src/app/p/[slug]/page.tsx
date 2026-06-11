@@ -9,7 +9,8 @@ import { ReviewForm } from "@/components/product/review-form";
 import { ReviewSection } from "@/components/product/review-section";
 import { Rating } from "@/components/ui/rating";
 import { TypeBadge, typeMeta } from "@/components/ui/type-badge";
-import { describeCapability, getBySlug } from "@/lib/catalog";
+import { SectionRow } from "@/components/store/section-row";
+import { describeCapability, getBySlug, getRelated } from "@/lib/catalog";
 import { getAchievementsForUser } from "@/lib/achievement-service";
 import { getMyCredits, isInLibrary } from "@/lib/library-service";
 import { isInWishlist } from "@/lib/wishlist-service";
@@ -29,6 +30,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const credits = userId ? await getMyCredits() : 0;
   const myReview = userId ? await getMyReview(slug) : null;
   const achievements = await getAchievementsForUser(product.id, userId);
+  const related = await getRelated(slug);
 
   return (
     <main className="mx-auto max-w-7xl px-4 pt-6 sm:px-6">
@@ -81,6 +83,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
           {/* 运行要求挪到底部 */}
           <CapabilityList capabilities={product.capabilities} />
+
+          {related.length > 0 && <SectionRow title="更多同类" products={related} />}
         </div>
 
         {/* 右侧栏：只保留购买/获取盒 */}
