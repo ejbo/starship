@@ -42,18 +42,21 @@ export default async function StorePage() {
 
   return (
     <>
+      {/* 全宽首发横幅（仿 Steam）：满屏出血，并上移到悬浮导航之下，让玻璃导航浮在 CG 之上 */}
+      <div className="-mt-[68px]">
+        <PromoBanner
+          banners={banners.map((b) => ({
+            title: b.title,
+            subtitle: b.subtitle,
+            badge: b.badge,
+            imageUrl: b.imageUrl,
+            videoUrl: b.videoUrl,
+            href: b.href,
+          }))}
+        />
+      </div>
+      {/* 浏览 / 推荐 / 分类：移到动态横幅下方 */}
       <StoreSubnav />
-      {/* 全宽首发横幅（仿 Steam BULLET FEST），脱离内容容器做满屏出血 */}
-      <PromoBanner
-        banners={banners.map((b) => ({
-          title: b.title,
-          subtitle: b.subtitle,
-          badge: b.badge,
-          imageUrl: b.imageUrl,
-          videoUrl: b.videoUrl,
-          href: b.href,
-        }))}
-      />
       <main className="mx-auto max-w-7xl space-y-10 px-4 pt-6 sm:px-6">
         <HeroCarousel products={featured} ranks={ranks} />
         {discounted.length > 0 && <Reveal><SectionRow title="限时特惠" products={discounted} /></Reveal>}

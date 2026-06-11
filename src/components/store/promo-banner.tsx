@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight, Sparkles } from "lucide-react";
-import { AuroraBackground } from "./aurora-background";
+import { CinematicBackground } from "./cinematic-background";
 
 export interface PromoBannerItem {
   title: string;
@@ -33,8 +33,8 @@ export function PromoBanner({ banners }: { banners: PromoBannerItem[] }) {
 
   return (
     <section className="relative">
-      <div className="relative block h-[220px] overflow-hidden sm:h-[320px] lg:h-[420px]">
-        {/* 动态背景：视频优先，否则 Canvas 极光（常驻，不随文案切换重绘） */}
+      <div className="relative block h-[300px] overflow-hidden sm:h-[400px] lg:h-[480px]">
+        {/* 动态背景：管理员设了视频则用真实视频，否则走 WebGL 星云穿越 CG */}
         {hasVideo ? (
           <video
             key={b.videoUrl}
@@ -47,7 +47,7 @@ export function PromoBanner({ banners }: { banners: PromoBannerItem[] }) {
             className="absolute inset-0 size-full object-cover"
           />
         ) : (
-          <AuroraBackground className="absolute inset-0 size-full" />
+          <CinematicBackground className="absolute inset-0 size-full" />
         )}
 
         {/* 压暗渐变，保证文案可读 + 两端暗角 */}
@@ -56,7 +56,7 @@ export function PromoBanner({ banners }: { banners: PromoBannerItem[] }) {
 
         {/* 文案对齐内容容器（max-w-7xl），轮播时仅文案淡入淡出 */}
         <Link href={b.href} className="group absolute inset-0">
-          <div className="mx-auto flex h-full max-w-7xl flex-col justify-center gap-3 px-4 text-white sm:px-6">
+          <div className="mx-auto flex h-full max-w-7xl flex-col justify-center gap-3 px-4 pt-[68px] text-white sm:px-6">
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={i}
