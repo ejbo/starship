@@ -76,11 +76,11 @@ export function SubnavBar({ wishCount }: { wishCount: number }) {
   return (
     <div
       className={cn(
-        "sticky top-14 z-40 border-b border-line/50 bg-panel/65 backdrop-blur-xl transition-transform duration-300 ease-out supports-[backdrop-filter]:bg-panel/65",
-        hidden && "-translate-y-[120px]",
+        "sticky top-[68px] z-40 px-3 pt-2 transition-all duration-300 ease-out",
+        hidden && "pointer-events-none -translate-y-3 opacity-0",
       )}
     >
-      <div className="mx-auto flex h-12 max-w-7xl items-center gap-1 px-4 sm:px-6">
+      <div className="mx-auto flex h-11 max-w-7xl items-center gap-1 rounded-xl border border-line/60 bg-panel/70 px-3 shadow-[0_8px_26px_-16px_rgba(20,30,60,0.3)] backdrop-blur-xl supports-[backdrop-filter]:bg-panel/70 sm:px-4">
         <div className="hidden items-center gap-1 md:flex">
           {menus.map((m) => (
             <div key={m.label} className="group relative">

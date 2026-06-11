@@ -32,8 +32,8 @@ export function GlobalNav({ user }: GlobalNavProps) {
       : pathname.startsWith(href);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-line/60 bg-panel/72 backdrop-blur-xl supports-[backdrop-filter]:bg-panel/72">
-      <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4 sm:gap-6 sm:px-6">
+    <header className="sticky top-0 z-50 px-3 pt-3">
+      <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 rounded-2xl border border-line/60 bg-panel/70 px-4 shadow-[0_10px_34px_-14px_rgba(20,30,60,0.32)] backdrop-blur-xl supports-[backdrop-filter]:bg-panel/70 sm:gap-6 sm:px-6">
         {/* 移动端汉堡 */}
         <button
           onClick={() => setMenuOpen((o) => !o)}
@@ -175,7 +175,7 @@ export function GlobalNav({ user }: GlobalNavProps) {
 
       {/* 移动端菜单 */}
       {menuOpen && (
-        <div className="border-t border-line/60 bg-panel/95 backdrop-blur-xl px-3 py-2 md:hidden">
+        <div className="mx-auto mt-2 max-w-7xl rounded-2xl border border-line/60 bg-panel/95 px-3 py-2 shadow-lg backdrop-blur-xl md:hidden">
           <nav className="flex flex-col">
             {[
               { href: "/", label: "商店", icon: null },

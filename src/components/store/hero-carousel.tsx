@@ -18,14 +18,13 @@ function FeaturedCard({ product, rank, active }: { product: Product; rank?: numb
     <div
       className={cn(
         "grid overflow-hidden rounded-xl shadow-sm transition-all duration-500 md:grid-cols-[1.7fr_1fr]",
-        active ? "opacity-100 ring-1 ring-line/0" : "opacity-55 scale-[0.97]",
+        active ? "opacity-100" : "opacity-55 scale-[0.97]",
       )}
     >
       <Link href={`/p/${product.slug}`} className="relative block min-h-64 overflow-hidden bg-ink/5">
         <CapsuleArt art={product.art} ratio="banner" className="size-full" iconClassName="max-h-24" />
       </Link>
 
-      {/* 深色聚光信息面板 */}
       <div className="flex flex-col gap-3 bg-[#16202d] p-5 text-white">
         <div className="flex items-center gap-2">
           <TypeBadge type={product.type} />
@@ -90,18 +89,29 @@ function FeaturedCard({ product, rank, active }: { product: Product; rank?: numb
 }
 
 export function HeroCarousel({ products, ranks }: { products: Product[]; ranks?: Record<string, number> }) {
-  const [index, setIndex] = useState(0);
+  const n = products.length;
+  const loop = n > 1;
+  // 三份拷贝实现无缝循环：起始停在中间那份，两侧永远有牌可半隐
+  const display = loop ? [...products, ...products, ...products] : products;
+
+  const [index, setIndex] = useState(loop ? n : 0); // display 下标
+  const [anim, setAnim] = useState(true);
   const [offset, setOffset] = useState(0);
   const pausedRef = useRef(false);
   const viewportRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
 
-  const go = useCallback(
-    (dir: number) => setIndex((i) => (i + dir + products.length) % products.length),
-    [products.length],
-  );
+  const go = useCallback((dir: number) => {
+    setAnim(true);
+    setIndex((i) => i + dir);
+  }, []);
 
-  // 居中当前卡：偏移 = 视口中线 − 卡片中线（卡片窄于视口 → 两侧露出相邻卡，形成半隐）
+  const jumpTo = useCallback((logical: number) => {
+    setAnim(true);
+    setIndex(loop ? n + logical : logical);
+  }, [loop, n]);
+
+  // 居中当前卡：offset = 视口中线 − 卡片中线（卡窄于视口 → 两侧露出相邻卡）
   const recenter = useCallback(() => {
     const vp = viewportRef.current;
     const track = trackRef.current;
@@ -123,14 +133,39 @@ export function HeroCarousel({ products, ranks }: { products: Product[]; ranks?:
     return () => ro.disconnect();
   }, [recenter]);
 
+  // 进入克隆区后，等动画结束无动画地拉回中间那份，达成无缝循环
   useEffect(() => {
+    if (!loop) return;
+    if (index >= 2 * n || index < n) {
+      const t = setTimeout(() => {
+        setAnim(false);
+        setIndex((i) => (((i % n) + n) % n) + n);
+      }, 520);
+      return () => clearTimeout(t);
+    }
+  }, [index, loop, n]);
+
+  // 无动画跳转后下一帧恢复动画
+  useEffect(() => {
+    if (anim) return;
+    const r = requestAnimationFrame(() => setAnim(true));
+    return () => cancelAnimationFrame(r);
+  }, [anim]);
+
+  // 自动轮播
+  useEffect(() => {
+    if (!loop) return;
     const timer = setInterval(() => {
-      if (!pausedRef.current) setIndex((i) => (i + 1) % products.length);
+      if (!pausedRef.current) {
+        setAnim(true);
+        setIndex((i) => i + 1);
+      }
     }, INTERVAL);
     return () => clearInterval(timer);
-  }, [products.length]);
+  }, [loop]);
 
-  if (products.length === 0) return null;
+  if (n === 0) return null;
+  const logical = (((index % n) + n) % n);
 
   return (
     <section
@@ -151,36 +186,38 @@ export function HeroCarousel({ products, ranks }: { products: Product[]; ranks?:
       </div>
 
       <div className="relative">
-        {/* 左右箭头 */}
-        <button
-          aria-label="上一个"
-          onClick={() => go(-1)}
-          className="absolute -left-3 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-line bg-panel/90 p-2 text-dim shadow-sm backdrop-blur transition-colors hover:text-accent lg:block"
-        >
-          <ChevronLeft className="size-5" />
-        </button>
-        <button
-          aria-label="下一个"
-          onClick={() => go(1)}
-          className="absolute -right-3 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-line bg-panel/90 p-2 text-dim shadow-sm backdrop-blur transition-colors hover:text-accent lg:block"
-        >
-          <ChevronRight className="size-5" />
-        </button>
+        {loop && (
+          <>
+            <button
+              aria-label="上一个"
+              onClick={() => go(-1)}
+              className="absolute -left-3 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-line bg-panel/90 p-2 text-dim shadow-sm backdrop-blur transition-colors hover:text-accent lg:block"
+            >
+              <ChevronLeft className="size-5" />
+            </button>
+            <button
+              aria-label="下一个"
+              onClick={() => go(1)}
+              className="absolute -right-3 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-line bg-panel/90 p-2 text-dim shadow-sm backdrop-blur transition-colors hover:text-accent lg:block"
+            >
+              <ChevronRight className="size-5" />
+            </button>
+          </>
+        )}
 
-        {/* 半隐轮播视口 */}
+        {/* 半隐无缝轮播视口 */}
         <div ref={viewportRef} className="overflow-hidden">
           <div
             ref={trackRef}
-            className="flex gap-4 transition-transform duration-500 ease-out"
+            className={cn("flex gap-4 ease-out", anim ? "transition-transform duration-500" : "transition-none")}
             style={{ transform: `translateX(${offset}px)` }}
           >
-            {products.map((p, i) => (
-              <div key={p.id} className="relative w-[92%] shrink-0 sm:w-[88%] lg:w-[82%]">
+            {display.map((p, i) => (
+              <div key={`${p.id}-${i}`} className="relative w-[92%] shrink-0 sm:w-[88%] lg:w-[82%]">
                 <FeaturedCard product={p} rank={ranks?.[p.slug]} active={i === index} />
-                {/* 非当前卡：覆盖透明点击层，点选即居中（不触发内部链接，避免嵌套交互） */}
                 {i !== index && (
                   <button
-                    onClick={() => setIndex(i)}
+                    onClick={() => { setAnim(true); setIndex(i); }}
                     aria-label={`查看 ${p.name}`}
                     className="absolute inset-0 z-10 cursor-pointer rounded-xl"
                   />
@@ -196,10 +233,10 @@ export function HeroCarousel({ products, ranks }: { products: Product[]; ranks?:
             <button
               key={p.id}
               aria-label={`第 ${i + 1} 个`}
-              onClick={() => setIndex(i)}
+              onClick={() => jumpTo(i)}
               className={cn(
                 "h-1.5 rounded-full transition-all",
-                i === index ? "w-6 bg-accent" : "w-1.5 bg-line hover:bg-mute",
+                i === logical ? "w-6 bg-accent" : "w-1.5 bg-line hover:bg-mute",
               )}
             />
           ))}
