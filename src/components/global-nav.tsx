@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Coins, Plus, Search, Settings, Shield, Zap } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Coins, Heart, Menu, Plus, Search, Settings, Shield, X, Zap } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/cn";
 
@@ -18,6 +19,12 @@ interface GlobalNavProps {
 
 export function GlobalNav({ user }: GlobalNavProps) {
   const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // 路由变化时关闭移动菜单
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
 
   const isActive = (href: string) =>
     href === "/"
@@ -26,7 +33,16 @@ export function GlobalNav({ user }: GlobalNavProps) {
 
   return (
     <header className="sticky top-0 z-50 border-b border-line bg-panel">
-      <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4 sm:px-6">
+      <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4 sm:gap-6 sm:px-6">
+        {/* 移动端汉堡 */}
+        <button
+          onClick={() => setMenuOpen((o) => !o)}
+          className="-ml-1 rounded-md p-1.5 text-dim transition-colors hover:bg-card-hi hover:text-ink md:hidden"
+          aria-label="菜单"
+        >
+          {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+        </button>
+
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2">
           <span className="flex size-7 items-center justify-center rounded-md bg-accent text-sm font-bold text-white">
@@ -139,6 +155,42 @@ export function GlobalNav({ user }: GlobalNavProps) {
           )}
         </div>
       </div>
+
+      {/* 移动端菜单 */}
+      {menuOpen && (
+        <div className="border-t border-line bg-panel px-3 py-2 md:hidden">
+          <nav className="flex flex-col">
+            {[
+              { href: "/", label: "商店", icon: null },
+              { href: "/library", label: "库", icon: null },
+              { href: "/community", label: "社区", icon: null },
+              ...(user
+                ? [
+                    { href: "/wishlist", label: "心愿单", icon: Heart },
+                    { href: "/wallet", label: "钱包", icon: Coins },
+                    { href: "/developer", label: "开发者中心", icon: null },
+                  ]
+                : []),
+              ...(user?.isAdmin ? [{ href: "/admin", label: "管理后台", icon: Shield }] : []),
+            ].map((l) => {
+              const Icon = l.icon;
+              return (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium",
+                    isActive(l.href) ? "bg-accent/8 text-accent" : "text-dim",
+                  )}
+                >
+                  {Icon && <Icon className="size-4" />}
+                  {l.label}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+      )}
     </header>
   );
 }

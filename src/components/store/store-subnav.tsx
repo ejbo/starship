@@ -48,6 +48,7 @@ export async function StoreSubnav() {
   return (
     <div className="sticky top-14 z-40 border-b border-line bg-panel/95 backdrop-blur">
       <div className="mx-auto flex h-12 max-w-7xl items-center gap-1 px-4 sm:px-6">
+        <div className="hidden items-center gap-1 md:flex">
         {menus.map((m) => (
           <div key={m.label} className="group relative">
             <button className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium text-dim transition-colors hover:bg-card-hi hover:text-ink">
@@ -69,8 +70,9 @@ export async function StoreSubnav() {
             </div>
           </div>
         ))}
+        </div>
 
-        <form action="/search" className="ml-auto flex items-center">
+        <form action="/search" className="flex items-center md:ml-auto">
           <label className="flex items-center gap-2 rounded-md border border-line bg-page px-3 py-1.5 text-sm text-mute transition-colors focus-within:border-accent">
             <Search className="size-3.5" />
             <input
