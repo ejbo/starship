@@ -76,13 +76,16 @@ export function GlobalNav({ user }: GlobalNavProps) {
 
         <div className="ml-auto flex items-center gap-3">
           {/* 搜索 */}
-          <label className="hidden items-center gap-2 rounded-md border border-line bg-page px-3 py-1.5 text-sm text-mute transition-colors focus-within:border-accent lg:flex">
-            <Search className="size-3.5" />
-            <input
-              placeholder="搜索应用、模型、开发者"
-              className="w-44 bg-transparent text-ink placeholder:text-mute focus:outline-none"
-            />
-          </label>
+          <form action="/search" className="hidden lg:block">
+            <label className="flex items-center gap-2 rounded-md border border-line bg-page px-3 py-1.5 text-sm text-mute transition-colors focus-within:border-accent">
+              <Search className="size-3.5" />
+              <input
+                name="q"
+                placeholder="搜索应用、模型、开发者"
+                className="w-44 bg-transparent text-ink placeholder:text-mute focus:outline-none"
+              />
+            </label>
+          </form>
 
           {user ? (
             <>

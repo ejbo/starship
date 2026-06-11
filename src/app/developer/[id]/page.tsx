@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 import { AchievementsEditor } from "@/components/developer/achievements-editor";
 import { AppCredentials } from "@/components/developer/app-credentials";
+import { AppCompleteness } from "@/components/developer/app-completeness";
 import { AppMediaForm } from "@/components/developer/app-media-form";
 import { AppMetaForm } from "@/components/developer/app-meta-form";
 import { PublishToggle } from "@/components/developer/publish-toggle";
@@ -43,6 +44,8 @@ export default async function AppEditPage({
       </header>
 
       <div className="space-y-6">
+        <AppCompleteness app={app} />
+
         <Section title="发布状态">
           <PublishToggle id={app.id} published={app.status === "published"} />
         </Section>
