@@ -9,9 +9,7 @@ import {
   Download,
   FileText,
   ImageIcon,
-  Maximize2,
   MessageSquare,
-  Minus,
   Paperclip,
   Search,
   Send,
@@ -161,8 +159,6 @@ export function SocialLayer({
   const [unread, setUnread] = useState<Record<string, number>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
-  const [minimized, setMinimized] = useState(false);
-  const [maximized, setMaximized] = useState(false);
   const [restored, setRestored] = useState(false);
 
   const activeChatRef = useRef<string | null>(null);
@@ -177,7 +173,6 @@ export function SocialLayer({
         if (s.dockOpen) setDockOpen(true);
         if (Array.isArray(s.openChats)) setOpenChats(s.openChats);
         if (s.activeChat) setActiveChat(s.activeChat);
-        if (s.minimized) setMinimized(true);
       }
     } catch {
       /* ignore */
@@ -189,11 +184,11 @@ export function SocialLayer({
   useEffect(() => {
     if (!restored) return;
     try {
-      localStorage.setItem(DOCK_KEY, JSON.stringify({ dockOpen, openChats, activeChat, minimized }));
+      localStorage.setItem(DOCK_KEY, JSON.stringify({ dockOpen, openChats, activeChat }));
     } catch {
       /* ignore */
     }
-  }, [restored, dockOpen, openChats, activeChat, minimized]);
+  }, [restored, dockOpen, openChats, activeChat]);
 
   const refresh = useCallback(async () => {
     const res = await refreshSocialAction();
@@ -214,7 +209,6 @@ export function SocialLayer({
     async (handle: string) => {
       setOpenChats((cur) => (cur.includes(handle) ? cur : [...cur, handle]));
       setActiveChat(handle);
-      setMinimized(false);
       setUnread((u) => ({ ...u, [handle]: 0 }));
       await ensureLoaded(handle);
     },
@@ -253,8 +247,6 @@ export function SocialLayer({
   const closeWindow = useCallback(() => {
     setOpenChats([]);
     setActiveChat(null);
-    setMinimized(false);
-    setMaximized(false);
   }, []);
 
   // —— 轮询：新消息 + 好友/请求/在线状态（每 2s） ——
@@ -348,17 +340,12 @@ export function SocialLayer({
         activeChat={activeChat}
         conversations={conversations}
         unread={unread}
-        minimized={minimized}
-        maximized={maximized}
         onActivate={(h) => {
           setActiveChat(h);
-          setMinimized(false);
           setUnread((u) => ({ ...u, [h]: 0 }));
         }}
         onCloseTab={closeChat}
         onCloseWindow={closeWindow}
-        onMinimize={() => setMinimized((m) => !m)}
-        onMaximize={() => setMaximized((m) => !m)}
         onSend={sendChat}
         onLoadOlder={loadOlder}
       />
@@ -803,13 +790,9 @@ function ChatWindows({
   activeChat,
   conversations,
   unread,
-  minimized,
-  maximized,
   onActivate,
   onCloseTab,
   onCloseWindow,
-  onMinimize,
-  onMaximize,
   onSend,
   onLoadOlder,
 }: {
@@ -819,13 +802,9 @@ function ChatWindows({
   activeChat: string | null;
   conversations: Record<string, Conversation>;
   unread: Record<string, number>;
-  minimized: boolean;
-  maximized: boolean;
   onActivate: (h: string) => void;
   onCloseTab: (h: string) => void;
   onCloseWindow: () => void;
-  onMinimize: () => void;
-  onMaximize: () => void;
   onSend: (h: string, body: string, input?: { kind: MessageKind; attachmentUrl?: string; attachmentName?: string }) => void;
   onLoadOlder: (h: string) => Promise<boolean>;
 }) {
@@ -846,25 +825,36 @@ function ChatWindows({
   const prevHeightRef = useRef(0);
   const imgInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // 输入框随行数增高，到上限（128px）后内部滚动
+  const autoGrow = () => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+  };
 
   const friendOf = (h: string) => friends.find((f) => f.handle === h);
   const active = activeChat ? friendOf(activeChat) : null;
   const conv = activeChat ? conversations[activeChat] : undefined;
   const messages = conv?.messages ?? [];
 
-  // 初始位置/尺寸：localStorage 记忆 > 居中/默认
+  // 初始位置/尺寸：默认就开成大尺寸（约占视口），localStorage 记忆优先。
   useEffect(() => {
+    let w = Math.min(880, window.innerWidth - 48);
+    let h = Math.min(720, window.innerHeight - 48);
     try {
       const savedSize = localStorage.getItem("starport_chat_size");
       if (savedSize) {
         const s = JSON.parse(savedSize);
-        setSize({ w: Math.max(MIN_W, Math.min(s.w, window.innerWidth - 16)), h: Math.max(MIN_H, Math.min(s.h, window.innerHeight - 16)) });
+        w = Math.max(MIN_W, Math.min(s.w, window.innerWidth - 16));
+        h = Math.max(MIN_H, Math.min(s.h, window.innerHeight - 16));
       }
     } catch {
       /* ignore */
     }
-    const w = DEFAULT_SIZE.w;
-    const h = DEFAULT_SIZE.h;
+    setSize({ w, h });
     try {
       const saved = localStorage.getItem("starport_chat_pos");
       if (saved) {
@@ -910,18 +900,11 @@ function ChatWindows({
   if (openChats.length === 0 || !pos) return null;
 
   // 计算最终位置/尺寸
-  const vw = typeof window !== "undefined" ? window.innerWidth : 1280;
-  const vh = typeof window !== "undefined" ? window.innerHeight : 800;
-  const maxW = Math.min(960, vw - 48);
-  const maxH = Math.min(800, vh - 48);
-  const dims = maximized ? { w: maxW, h: maxH } : size;
-  const winStyle = maximized
-    ? { left: Math.max(16, (vw - maxW) / 2), top: Math.max(16, (vh - maxH) / 2), width: maxW, height: maxH }
-    : { left: pos.x, top: pos.y, width: size.w, height: minimized ? ("auto" as const) : size.h };
+  const dims = size;
+  const winStyle = { left: pos.x, top: pos.y, width: size.w, height: size.h };
 
   // —— 拖动 ——
   const onDragStart = (e: React.PointerEvent) => {
-    if (maximized) return;
     dragRef.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
   };
@@ -944,7 +927,7 @@ function ChatWindows({
 
   // —— 四角缩放 ——
   const startResize = (corner: Corner) => (e: React.PointerEvent) => {
-    if (maximized || !pos) return;
+    if (!pos) return;
     e.stopPropagation();
     resizeRef.current = { corner, mx: e.clientX, my: e.clientY, pos: { ...pos }, size: { ...size } };
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -1000,6 +983,7 @@ function ChatWindows({
     const body = draft.trim();
     if (!body || !activeChat) return;
     setDraft("");
+    if (taRef.current) taRef.current.style.height = "auto";
     atBottomRef.current = true;
     onSend(activeChat, body);
   };
@@ -1042,7 +1026,6 @@ function ChatWindows({
   };
 
   const grouped = groupByDayAndSender(messages);
-  const showResize = !minimized && !maximized;
   const cornerCls = "absolute z-10 size-3.5";
 
   return (
@@ -1056,28 +1039,33 @@ function ChatWindows({
           onPointerDown={onDragStart}
           onPointerMove={onDragMove}
           onPointerUp={onDragEnd}
-          className={cn("flex touch-none items-stretch border-b border-line bg-card-hi", !maximized && "cursor-move")}
+          className="flex cursor-move touch-none items-stretch border-b border-line bg-card-hi"
         >
           <div className="flex grow items-stretch gap-px overflow-x-auto">
             {openChats.map((h) => {
               const f = friendOf(h);
               if (!f) return null;
               const isActive = h === activeChat;
+              const pm = presenceMeta[f.presence.kind];
               return (
                 <div
                   key={h}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => onActivate(h)}
                   className={cn(
-                    "group flex max-w-[8rem] cursor-pointer items-center gap-1.5 px-2.5 py-2 text-xs transition-colors",
-                    isActive ? "bg-panel font-medium text-ink" : "text-dim hover:bg-panel/60",
+                    "group flex cursor-pointer items-center gap-2 px-3 py-2 text-xs transition-colors",
+                    isActive ? "bg-panel font-medium text-ink" : "max-w-[9rem] text-dim hover:bg-panel/60",
                   )}
                 >
-                  <span className="relative">
-                    <Avatar name={display(f)} hue={f.avatarHue} src={f.avatarUrl} size="xs" />
-                    {(unread[h] ?? 0) > 0 && !isActive && <span className="absolute -right-1 -top-1 size-2 rounded-full bg-danger" />}
+                  <span className="relative shrink-0">
+                    <Avatar name={display(f)} hue={f.avatarHue} src={f.avatarUrl} size="sm" />
+                    <span className={cn("absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-card-hi", pm.dot)} />
+                    {(unread[h] ?? 0) > 0 && !isActive && <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-danger ring-2 ring-card-hi" />}
                   </span>
-                  <span className="truncate">{display(f)}</span>
+                  <span className="min-w-0 leading-tight">
+                    <span className="block truncate text-[13px]">{display(f)}</span>
+                    {isActive && <span className={cn("block truncate text-[10px] font-normal", pm.tone)}>{pm.text(f.presence.detail)}</span>}
+                  </span>
                   <span
                     role="button"
                     onPointerDown={(e) => e.stopPropagation()}
@@ -1085,7 +1073,7 @@ function ChatWindows({
                       e.stopPropagation();
                       onCloseTab(h);
                     }}
-                    className="rounded p-0.5 text-mute opacity-0 transition-opacity hover:bg-card-hi hover:text-ink group-hover:opacity-100"
+                    className="ml-0.5 rounded p-0.5 text-mute opacity-0 transition-opacity hover:bg-card-hi hover:text-ink group-hover:opacity-100"
                   >
                     <X className="size-3" />
                   </span>
@@ -1093,34 +1081,15 @@ function ChatWindows({
               );
             })}
           </div>
-          <div className="flex items-center gap-0.5 px-1" onPointerDown={(e) => e.stopPropagation()}>
-            <button onClick={onMinimize} className="rounded p-1.5 text-mute transition-colors hover:bg-panel hover:text-ink" title="最小化" aria-label="最小化">
-              <Minus className="size-3.5" />
-            </button>
-            <button onClick={onMaximize} className="rounded p-1.5 text-mute transition-colors hover:bg-panel hover:text-ink" title={maximized ? "还原" : "放大"} aria-label="放大">
-              <Maximize2 className="size-3.5" />
-            </button>
+          <div className="flex items-center px-1" onPointerDown={(e) => e.stopPropagation()}>
             <button onClick={onCloseWindow} className="rounded p-1.5 text-mute transition-colors hover:bg-danger/10 hover:text-danger" title="关闭" aria-label="关闭">
-              <X className="size-3.5" />
+              <X className="size-4" />
             </button>
           </div>
         </div>
 
-        {!minimized && active && (
+        {active && (
           <>
-            <div className="flex items-center gap-2 border-b border-line px-3 py-2">
-              <span className="relative">
-                <Avatar name={display(active)} hue={active.avatarHue} src={active.avatarUrl} size="sm" />
-                <span className={cn("absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-panel", presenceMeta[active.presence.kind].dot)} />
-              </span>
-              <div className="leading-tight">
-                <p className="text-sm font-medium">{display(active)}</p>
-                <p className={cn("text-[11px]", presenceMeta[active.presence.kind].tone)}>
-                  {presenceMeta[active.presence.kind].text(active.presence.detail)}
-                </p>
-              </div>
-            </div>
-
             <div ref={scrollRef} onScroll={onScroll} className="grow space-y-1 overflow-y-auto bg-page/40 px-3 py-3">
               {conv?.hasMore && <p className="py-1 text-center text-[10px] text-mute">上滑加载更早的消息…</p>}
               {messages.length === 0 ? (
@@ -1177,18 +1146,27 @@ function ChatWindows({
                 <button onClick={() => fileInputRef.current?.click()} className="rounded-lg p-1.5 text-mute transition-colors hover:bg-card-hi hover:text-ink" title="文件" aria-label="文件">
                   <Paperclip className="size-4" />
                 </button>
-                <span className="ml-auto pr-1 text-[10px] text-mute">可粘贴图片</span>
                 <input ref={imgInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) sendImage(f); e.target.value = ""; }} />
                 <input ref={fileInputRef} type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) sendFile(f); e.target.value = ""; }} />
               </div>
-              <div className="flex items-center gap-2">
-                <input
+              <div className="flex items-end gap-2">
+                <textarea
+                  ref={taRef}
                   value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && send()}
+                  rows={1}
+                  onChange={(e) => {
+                    setDraft(e.target.value);
+                    autoGrow();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      send();
+                    }
+                  }}
                   onPaste={onPaste}
-                  placeholder={`发消息给 ${display(active)}（可粘贴图片）`}
-                  className="grow rounded-lg border border-line bg-page px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+                  placeholder={`发消息给 ${display(active)}`}
+                  className="max-h-32 grow resize-none overflow-y-auto rounded-lg border border-line bg-page px-3 py-1.5 text-sm leading-relaxed focus:border-accent focus:outline-none"
                 />
                 <button onClick={send} disabled={!draft.trim()} className="rounded-lg bg-accent p-2 text-white transition-colors hover:bg-accent-deep disabled:opacity-40" aria-label="发送">
                   <Send className="size-3.5" />
@@ -1199,16 +1177,12 @@ function ChatWindows({
         )}
 
         {/* 四角缩放手柄 */}
-        {showResize && (
-          <>
-            <div onPointerDown={startResize("nw")} onPointerMove={onResizeMove} onPointerUp={onResizeEnd} className={cn(cornerCls, "left-0 top-0 cursor-nwse-resize")} />
-            <div onPointerDown={startResize("ne")} onPointerMove={onResizeMove} onPointerUp={onResizeEnd} className={cn(cornerCls, "right-0 top-0 cursor-nesw-resize")} />
-            <div onPointerDown={startResize("sw")} onPointerMove={onResizeMove} onPointerUp={onResizeEnd} className={cn(cornerCls, "bottom-0 left-0 cursor-nesw-resize")} />
-            <div onPointerDown={startResize("se")} onPointerMove={onResizeMove} onPointerUp={onResizeEnd} className={cn(cornerCls, "bottom-0 right-0 cursor-nwse-resize")}>
-              <span className="absolute bottom-0.5 right-0.5 block size-1.5 rounded-sm border-b-2 border-r-2 border-mute/50" />
-            </div>
-          </>
-        )}
+        <div onPointerDown={startResize("nw")} onPointerMove={onResizeMove} onPointerUp={onResizeEnd} className={cn(cornerCls, "left-0 top-0 cursor-nwse-resize")} />
+        <div onPointerDown={startResize("ne")} onPointerMove={onResizeMove} onPointerUp={onResizeEnd} className={cn(cornerCls, "right-0 top-0 cursor-nesw-resize")} />
+        <div onPointerDown={startResize("sw")} onPointerMove={onResizeMove} onPointerUp={onResizeEnd} className={cn(cornerCls, "bottom-0 left-0 cursor-nesw-resize")} />
+        <div onPointerDown={startResize("se")} onPointerMove={onResizeMove} onPointerUp={onResizeEnd} className={cn(cornerCls, "bottom-0 right-0 cursor-nwse-resize")}>
+          <span className="absolute bottom-0.5 right-0.5 block size-1.5 rounded-sm border-b-2 border-r-2 border-mute/50" />
+        </div>
       </div>
 
       {/* 图片放大 popup */}
