@@ -1,0 +1,92 @@
+import Link from "next/link";
+import { ChevronDown, Search, Trophy } from "lucide-react";
+
+type Item = { label: string; href: string };
+const menus: { label: string; items: Item[] }[] = [
+  {
+    label: "浏览",
+    items: [
+      { label: "商店首页", href: "/" },
+      { label: "全部应用", href: "/t/app" },
+      { label: "排行榜", href: "/#charts" },
+      { label: "新品", href: "/#charts" },
+    ],
+  },
+  {
+    label: "推荐",
+    items: [
+      { label: "为你推荐", href: "/#discovery" },
+      { label: "精选与推荐", href: "/#featured" },
+      { label: "高分作品", href: "/#charts" },
+    ],
+  },
+  {
+    label: "分类",
+    items: [
+      { label: "应用", href: "/t/app" },
+      { label: "AI 模型", href: "/t/model" },
+      { label: "Agent", href: "/t/agent" },
+      { label: "Skill 工坊", href: "/t/skill" },
+      { label: "互动教程", href: "/t/tutorial" },
+      { label: "视频", href: "/t/video" },
+    ],
+  },
+  {
+    label: "更多",
+    items: [
+      { label: "开发者中心", href: "/developer" },
+      { label: "平台接口", href: "/developer/integrate" },
+      { label: "社区", href: "/community" },
+    ],
+  },
+];
+
+/** 商店子导航条（仿 Steam Browse/Recommendations/Categories/More + 搜索）。纯 CSS hover 下拉，搜索走原生 GET。 */
+export function StoreSubnav() {
+  return (
+    <div className="sticky top-14 z-40 border-b border-line bg-panel/95 backdrop-blur">
+      <div className="mx-auto flex h-12 max-w-7xl items-center gap-1 px-4 sm:px-6">
+        {menus.map((m) => (
+          <div key={m.label} className="group relative">
+            <button className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium text-dim transition-colors hover:bg-card-hi hover:text-ink">
+              {m.label}
+              <ChevronDown className="size-3.5 opacity-60 transition-transform group-hover:rotate-180" />
+            </button>
+            <div className="absolute left-0 top-full hidden min-w-44 pt-1 group-hover:block">
+              <div className="capsule overflow-hidden py-1 shadow-lg">
+                {m.items.map((it) => (
+                  <Link
+                    key={it.label + it.href}
+                    href={it.href}
+                    className="block px-3.5 py-2 text-sm text-dim transition-colors hover:bg-accent/8 hover:text-accent"
+                  >
+                    {it.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+
+        <form action="/search" className="ml-auto flex items-center">
+          <label className="flex items-center gap-2 rounded-md border border-line bg-page px-3 py-1.5 text-sm text-mute transition-colors focus-within:border-accent">
+            <Search className="size-3.5" />
+            <input
+              name="q"
+              placeholder="搜索商店"
+              className="w-36 bg-transparent text-ink placeholder:text-mute focus:outline-none sm:w-52"
+            />
+          </label>
+        </form>
+
+        <Link
+          href="/#charts"
+          className="hidden items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-dim transition-colors hover:bg-card-hi hover:text-ink sm:flex"
+        >
+          <Trophy className="size-4 text-star" />
+          排行榜
+        </Link>
+      </div>
+    </div>
+  );
+}

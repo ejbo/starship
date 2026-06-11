@@ -3,43 +3,74 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, Download } from "lucide-react";
-import { PriceTag } from "@/components/store/product-card";
+import { ArrowRight, ChevronLeft, ChevronRight, Code2, TrendingUp } from "lucide-react";
 import { CapsuleArt } from "@/components/ui/capsule-art";
-import { Rating } from "@/components/ui/rating";
+import { ratingVerdict } from "@/components/ui/rating";
 import { TypeBadge } from "@/components/ui/type-badge";
 import { cn } from "@/lib/cn";
 import type { Product } from "@/lib/types";
 
 const INTERVAL = 6000;
 
-export function HeroCarousel({ products }: { products: Product[] }) {
+export function HeroCarousel({ products, ranks }: { products: Product[]; ranks?: Record<string, number> }) {
   const [index, setIndex] = useState(0);
   const pausedRef = useRef(false);
   const current = products[index];
 
-  const advance = useCallback(() => setIndex((i) => (i + 1) % products.length), [products.length]);
+  const go = useCallback(
+    (dir: number) => setIndex((i) => (i + dir + products.length) % products.length),
+    [products.length],
+  );
 
   useEffect(() => {
     const timer = setInterval(() => {
-      if (!pausedRef.current) advance();
+      if (!pausedRef.current) setIndex((i) => (i + 1) % products.length);
     }, INTERVAL);
     return () => clearInterval(timer);
-  }, [advance]);
+  }, [products.length]);
 
   if (!current) return null;
+  const verdict = ratingVerdict(current.rating.score);
+  const rank = ranks?.[current.slug];
 
   return (
     <section
+      id="featured"
+      className="scroll-mt-28"
       onMouseEnter={() => (pausedRef.current = true)}
       onMouseLeave={() => (pausedRef.current = false)}
     >
-      <h2 className="mb-3 text-lg font-bold">精选与推荐</h2>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-lg font-bold">精选与推荐</h2>
+        <Link
+          href="/developer"
+          className="inline-flex items-center gap-1.5 rounded-md bg-card-hi px-3 py-1.5 text-xs font-medium text-dim transition-colors hover:text-accent"
+        >
+          <Code2 className="size-3.5" />
+          成为开发者
+        </Link>
+      </div>
 
-      <div className="grid gap-3 lg:grid-cols-[1fr_232px]">
-        {/* 主卡 */}
-        <div className="capsule grid overflow-hidden sm:grid-cols-[1.5fr_1fr]">
-          <div className="relative min-h-56 overflow-hidden">
+      <div className="relative">
+        {/* 左右箭头 */}
+        <button
+          aria-label="上一个"
+          onClick={() => go(-1)}
+          className="absolute -left-3 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-line bg-panel/90 p-2 text-dim shadow-sm backdrop-blur transition-colors hover:text-accent lg:block"
+        >
+          <ChevronLeft className="size-5" />
+        </button>
+        <button
+          aria-label="下一个"
+          onClick={() => go(1)}
+          className="absolute -right-3 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-line bg-panel/90 p-2 text-dim shadow-sm backdrop-blur transition-colors hover:text-accent lg:block"
+        >
+          <ChevronRight className="size-5" />
+        </button>
+
+        {/* 大卡：左大图 + 右深色信息面板 */}
+        <div className="grid overflow-hidden rounded-xl shadow-sm md:grid-cols-[1.7fr_1fr]">
+          <Link href={`/p/${current.slug}`} className="relative block min-h-64 overflow-hidden bg-ink/5">
             <AnimatePresence mode="popLayout" initial={false}>
               <motion.div
                 key={current.id}
@@ -49,12 +80,13 @@ export function HeroCarousel({ products }: { products: Product[] }) {
                 transition={{ duration: 0.4, ease: "easeOut" }}
                 className="absolute inset-0"
               >
-                <CapsuleArt art={current.art} ratio="banner" className="h-full w-full" iconClassName="max-h-24" />
+                <CapsuleArt art={current.art} ratio="banner" className="size-full" iconClassName="max-h-24" />
               </motion.div>
             </AnimatePresence>
-          </div>
+          </Link>
 
-          <div className="flex flex-col gap-3 border-t border-line p-5 sm:border-t-0 sm:border-l">
+          {/* 深色聚光信息面板（Steam 风） */}
+          <div className="flex flex-col gap-3 bg-[#16202d] p-5 text-white">
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={current.id}
@@ -66,18 +98,57 @@ export function HeroCarousel({ products }: { products: Product[] }) {
               >
                 <div className="flex items-center gap-2">
                   <TypeBadge type={current.type} />
-                  <span className="text-xs text-mute">{current.developer}</span>
+                  <span className="text-xs text-slate-400">{current.developer}</span>
                 </div>
-                <h3 className="text-xl font-bold leading-tight">{current.name}</h3>
-                <p className="line-clamp-2 text-sm leading-relaxed text-dim">{current.tagline}</p>
-                {/* 截图缩略 */}
-                <div className="flex gap-1.5">
-                  {[0, 1, 2].map((v) => (
-                    <CapsuleArt key={v} art={current.art} ratio="wide" variant={v + 1} className="w-1/3 rounded ring-1 ring-line" iconClassName="size-1/4" />
+                <Link href={`/p/${current.slug}`} className="text-xl font-bold leading-tight hover:text-sky-300">
+                  {current.name}
+                </Link>
+
+                {/* 评价档位 + 条数 */}
+                <p className="text-sm">
+                  <span
+                    className={cn(
+                      "font-medium",
+                      verdict.tone === "bad" ? "text-rose-400" : verdict.tone === "mixed" ? "text-amber-300" : "text-sky-300",
+                    )}
+                  >
+                    {verdict.label}
+                  </span>
+                  <span className="text-slate-400"> （{current.rating.count.toLocaleString("zh-CN")} 篇评测）</span>
+                </p>
+
+                {/* 2×2 截图格 */}
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[1, 2, 3, 4].map((v) => (
+                    <CapsuleArt
+                      key={v}
+                      art={current.art}
+                      ratio="wide"
+                      variant={v}
+                      className="rounded ring-1 ring-white/10"
+                      iconClassName="size-1/4"
+                    />
                   ))}
                 </div>
-                <Rating score={current.rating.score} count={current.rating.count} className="mt-auto text-xs" />
-                <div className="flex items-center gap-3">
+
+                {/* 热销排名徽标 */}
+                {rank != null && rank <= 10 && (
+                  <p className="mt-auto flex items-center gap-2 text-sm">
+                    <TrendingUp className="size-5 text-lime-400" />
+                    <span className="font-semibold text-lime-400">热销</span>
+                    <span className="text-slate-300">本周排名第 {rank} 名</span>
+                  </p>
+                )}
+
+                {/* 价格 + CTA */}
+                <div className={cn("flex items-center justify-between gap-3", rank == null || rank > 10 ? "mt-auto" : "")}>
+                  <span className="text-sm font-medium">
+                    {current.price === "free" ? (
+                      <span className="text-lime-400">免费开玩</span>
+                    ) : (
+                      <span className="text-slate-200">{current.price.credits} 点数</span>
+                    )}
+                  </span>
                   <Link
                     href={`/p/${current.slug}`}
                     className="group/cta inline-flex items-center gap-1.5 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-deep"
@@ -85,33 +156,24 @@ export function HeroCarousel({ products }: { products: Product[] }) {
                     查看详情
                     <ArrowRight className="size-4 transition-transform group-hover/cta:translate-x-0.5" />
                   </Link>
-                  <PriceTag price={current.price} className="text-sm" />
                 </div>
               </motion.div>
             </AnimatePresence>
           </div>
         </div>
 
-        {/* 右侧缩略图竖列（Steam 标志） */}
-        <div className="hidden flex-col gap-1.5 lg:flex">
+        {/* 圆点指示 */}
+        <div className="mt-3 flex items-center justify-center gap-1.5">
           {products.map((p, i) => (
             <button
               key={p.id}
-              onMouseEnter={() => setIndex(i)}
+              aria-label={`第 ${i + 1} 个`}
               onClick={() => setIndex(i)}
               className={cn(
-                "flex items-center gap-2 rounded-md border p-1.5 text-left transition-colors",
-                i === index ? "border-accent bg-accent/5" : "border-transparent hover:bg-card-hi",
+                "h-1.5 rounded-full transition-all",
+                i === index ? "w-6 bg-accent" : "w-1.5 bg-line hover:bg-mute",
               )}
-            >
-              <CapsuleArt art={p.art} ratio="wide" className="w-16 shrink-0 rounded ring-1 ring-line" iconClassName="size-1/3" />
-              <span className="min-w-0">
-                <span className="block truncate text-xs font-medium">{p.name}</span>
-                <span className="flex items-center gap-1 text-[10px] text-mute">
-                  <Download className="size-2.5" /> {p.acquisitions.toLocaleString("zh-CN")}
-                </span>
-              </span>
-            </button>
+            />
           ))}
         </div>
       </div>
