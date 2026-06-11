@@ -19,8 +19,8 @@ export default async function RunPage({ params }: { params: Promise<{ slug: stri
   const product = await getBySlug(slug);
   if (!product || !product.entry) notFound();
 
-  // 上报正在使用的应用，反哺好友在线状态
-  await setActivity(product.name);
+  // 上报正在使用的应用（含 slug，好友右键可直达商店页），反哺好友在线状态
+  await setActivity(product.name, product.slug);
 
   return (
     <main className="mx-auto max-w-7xl px-4 pt-6 sm:px-6">

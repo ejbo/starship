@@ -14,6 +14,7 @@ import {
   Search,
   Send,
   Smile,
+  Store,
   UserMinus,
   UserPlus,
   Users,
@@ -716,9 +717,13 @@ function FriendContextMenu({
   onRemark: () => void;
   onRemove: () => void;
 }) {
+  const usingApp = state.friend.presence.kind === "using" ? state.friend.presence.appSlug : undefined;
   const items = [
     { label: "发消息", icon: MessageSquare, run: onMessage },
     { label: "查看个人主页", icon: Users, run: () => (window.location.href = `/u/${state.friend.handle}`) },
+    ...(usingApp
+      ? [{ label: "TA 正在玩的应用", icon: Store, run: () => (window.location.href = `/p/${usingApp}`) }]
+      : []),
     { label: "设置备注", icon: Copy, run: onRemark },
     { label: "删除好友", icon: UserMinus, run: onRemove, danger: true },
   ];

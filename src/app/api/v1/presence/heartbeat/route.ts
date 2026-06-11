@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   if (body.leaving) {
     await prisma.user.update({
       where: { id: userId },
-      data: { currentActivity: null, activityAt: null },
+      data: { currentActivity: null, currentActivitySlug: null, activityAt: null },
     });
     return NextResponse.json({ ok: true, cleared: true });
   }
@@ -43,10 +43,13 @@ export async function POST(req: Request) {
 
   const now = new Date().toISOString();
 
+  // 该应用 slug（让好友右键可直达其商店页）；productId 由令牌确定
+  const product = await prisma.product.findUnique({ where: { id: productId }, select: { slug: true } });
+
   // 1) 富状态
   await prisma.user.update({
     where: { id: userId },
-    data: { currentActivity: activity, activityAt: now, lastSeenAt: now },
+    data: { currentActivity: activity, currentActivitySlug: product?.slug ?? null, activityAt: now, lastSeenAt: now },
   });
 
   // 2) 使用时长（按秒累加，clamp 防异常）

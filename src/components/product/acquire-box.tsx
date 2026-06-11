@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { Check, Coins, Download, Loader2, Play, Plus } from "lucide-react";
-import { acquireAction, removeAction } from "@/app/p/[slug]/actions";
+import { Check, Coins, Download, ExternalLink, Loader2, Play, Plus } from "lucide-react";
+import { acquireAction, launchAppAction, removeAction } from "@/app/p/[slug]/actions";
 import { WishlistButton } from "@/components/product/wishlist-button";
 import { cn } from "@/lib/cn";
 import type { Product } from "@/lib/types";
@@ -23,7 +23,25 @@ export function AcquireBox({ product, acquired, signedOut, credits = 0, wishlist
   const [isAcquired, setIsAcquired] = useState(acquired);
   const [balance, setBalance] = useState(credits);
   const [pending, startTransition] = useTransition();
+  const [launchPending, startLaunch] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const isNewtab = product.entry?.launchMode === "newtab";
+
+  // newtab 应用：点击直接开新标签页（先同步开空白页保住用户手势，再回填地址，绕过弹窗拦截），
+  // 同时上报「正在使用」。sandbox 应用仍走 /run 容器页。
+  const launch = () => {
+    const w = window.open("", "_blank");
+    startLaunch(async () => {
+      const res = await launchAppAction(product.slug);
+      if (res.ok && res.url) {
+        if (w) w.location.href = res.url;
+        else window.location.href = res.url;
+      } else {
+        if (w) w.close();
+        setError(res.error ?? "启动失败");
+      }
+    });
+  };
   const free = product.price === "free";
   const priceObj = free ? null : (product.price as { credits: number; original?: number; discountPct?: number });
   const price = priceObj?.credits ?? 0;
@@ -121,12 +139,23 @@ export function AcquireBox({ product, acquired, signedOut, credits = 0, wishlist
       )}
 
       {isAcquired && !signedOut && product.entry && (
-        <Link
-          href={`/run/${product.slug}`}
-          className="flex w-full items-center justify-center gap-1.5 rounded-md border border-accent/40 bg-accent/8 py-2.5 text-sm font-medium text-accent transition-colors hover:bg-accent/15"
-        >
-          <Play className="size-4" /> 启动应用
-        </Link>
+        isNewtab ? (
+          <button
+            onClick={launch}
+            disabled={launchPending}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-accent/40 bg-accent/8 py-2.5 text-sm font-medium text-accent transition-colors hover:bg-accent/15 disabled:opacity-60"
+          >
+            {launchPending ? <Loader2 className="size-4 animate-spin" /> : <ExternalLink className="size-4" />}
+            {launchPending ? "正在打开…" : "启动应用"}
+          </button>
+        ) : (
+          <Link
+            href={`/run/${product.slug}`}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-accent/40 bg-accent/8 py-2.5 text-sm font-medium text-accent transition-colors hover:bg-accent/15"
+          >
+            <Play className="size-4" /> 启动应用
+          </Link>
+        )
       )}
 
       <dl className="space-y-1.5 border-t border-line pt-3 text-xs text-dim">

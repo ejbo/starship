@@ -43,6 +43,8 @@ model User {
   lastSeenAt   String?
   /// 真实在线信号：当前正在使用的应用名 + 设置时刻
   currentActivity String?
+  /// 当前正在使用应用的 slug（好友右键可直达其商店页）
+  currentActivitySlug String?
   activityAt   String?
   /// 种子/兜底展示状态（好友未真实登录时使用）：online|using|meeting|offline
   presenceKind String          @default("offline")

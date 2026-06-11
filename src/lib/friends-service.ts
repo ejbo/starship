@@ -11,13 +11,14 @@ const ACTIVITY_WINDOW_MS = 10 * 60 * 1000;
 function derivePresence(u: {
   lastSeenAt: string | null;
   currentActivity: string | null;
+  currentActivitySlug: string | null;
   activityAt: string | null;
   presenceKind: string;
   presenceDetail: string | null;
-}): { kind: PresenceKind; detail?: string } {
+}): { kind: PresenceKind; detail?: string; appSlug?: string } {
   const now = Date.now();
   if (u.currentActivity && u.activityAt && now - Date.parse(u.activityAt) < ACTIVITY_WINDOW_MS) {
-    return { kind: "using", detail: u.currentActivity };
+    return { kind: "using", detail: u.currentActivity, appSlug: u.currentActivitySlug ?? undefined };
   }
   if (u.lastSeenAt && now - Date.parse(u.lastSeenAt) < ONLINE_WINDOW_MS) {
     return { kind: "online" };
@@ -32,14 +33,14 @@ export async function touchPresence(): Promise<void> {
   await prisma.user.update({ where: { id: userId }, data: { lastSeenAt: new Date().toISOString() } });
 }
 
-/** 启动应用时上报"正在使用 X" */
-export async function setActivity(activity: string): Promise<void> {
+/** 启动应用时上报"正在使用 X"（slug 让好友可直达其商店页） */
+export async function setActivity(activity: string, slug?: string): Promise<void> {
   const userId = await getSessionUserIdOrNull();
   if (!userId) return;
   const now = new Date().toISOString();
   await prisma.user.update({
     where: { id: userId },
-    data: { currentActivity: activity, activityAt: now, lastSeenAt: now },
+    data: { currentActivity: activity, currentActivitySlug: slug ?? null, activityAt: now, lastSeenAt: now },
   });
 }
 
@@ -68,6 +69,7 @@ export async function getFriendsWithPresence(): Promise<Friend[]> {
         level: true,
         lastSeenAt: true,
         currentActivity: true,
+        currentActivitySlug: true,
         activityAt: true,
         presenceKind: true,
         presenceDetail: true,

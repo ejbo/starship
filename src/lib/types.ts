@@ -69,7 +69,7 @@ export interface Friend {
   avatarHue: number;
   avatarUrl?: string | null;
   level: number;
-  presence: { kind: PresenceKind; detail?: string };
+  presence: { kind: PresenceKind; detail?: string; appSlug?: string };
 }
 
 export interface CurrentUser {
