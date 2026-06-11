@@ -1,16 +1,23 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ChevronRight, Plus, Sparkles } from "lucide-react";
+import { ChevronRight, Coins, Download, Plus, Sparkles, Star, Boxes } from "lucide-react";
 import { CreateAppForm } from "@/components/developer/create-app-form";
 import { TypeBadge } from "@/components/ui/type-badge";
-import { listMyApps } from "@/lib/developer-service";
+import { getDeveloperStats, listMyApps } from "@/lib/developer-service";
 import { getSessionUserIdOrNull } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function DeveloperPage() {
   if (!(await getSessionUserIdOrNull())) redirect("/login");
-  const apps = await listMyApps();
+  const [apps, stats] = await Promise.all([listMyApps(), getDeveloperStats()]);
+  const overview = [
+    { icon: Boxes, label: "应用", value: `${stats.appCount}` },
+    { icon: Sparkles, label: "已上架", value: `${stats.publishedCount}` },
+    { icon: Download, label: "总获取", value: stats.totalAcquisitions.toLocaleString("zh-CN") },
+    { icon: Star, label: "平均分", value: stats.avgRating ? stats.avgRating.toFixed(1) : "—" },
+    { icon: Coins, label: "累计收益", value: stats.earnings.toLocaleString("zh-CN") },
+  ];
 
   return (
     <main className="mx-auto max-w-5xl px-4 pt-8 sm:px-6">
@@ -26,6 +33,16 @@ export default async function DeveloperPage() {
           <Sparkles className="size-4" /> 接入与开放 API
         </Link>
       </header>
+
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {overview.map(({ icon: Icon, label, value }) => (
+          <div key={label} className="capsule p-3.5">
+            <Icon className="mb-1.5 size-4 text-accent/70" />
+            <p className="text-xl font-bold">{value}</p>
+            <p className="text-[11px] text-mute">{label}</p>
+          </div>
+        ))}
+      </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
         {/* 我的应用 */}

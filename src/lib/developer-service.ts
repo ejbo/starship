@@ -113,6 +113,27 @@ export async function getMyApp(id: string) {
   return product;
 }
 
+/** 开发者总览：应用数 / 已上架 / 总获取量 / 均分 / 累计收益（点数） */
+export async function getDeveloperStats() {
+  const userId = await getSessionUserId();
+  const apps = await prisma.product.findMany({
+    where: { ownerUserId: userId },
+    select: { acquisitions: true, ratingScore: true, ratingCount: true, status: true },
+  });
+  const earnings = await prisma.creditTransaction.aggregate({
+    where: { userId, kind: "earning" },
+    _sum: { amount: true },
+  });
+  const rated = apps.filter((a) => a.ratingCount > 0);
+  return {
+    appCount: apps.length,
+    publishedCount: apps.filter((a) => a.status === "published").length,
+    totalAcquisitions: apps.reduce((s, a) => s + a.acquisitions, 0),
+    avgRating: rated.length ? rated.reduce((s, a) => s + a.ratingScore, 0) / rated.length : 0,
+    earnings: earnings._sum.amount ?? 0,
+  };
+}
+
 export interface UpdateAppInput {
   tagline: string;
   description: string;
