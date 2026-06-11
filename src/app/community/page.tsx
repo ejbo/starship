@@ -1,79 +1,34 @@
 import Link from "next/link";
-import { Download, Flame, Plus, Radio, Star, Trophy, Users, Wrench } from "lucide-react";
+import { Flame, Radio, Users } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { CapsuleArt } from "@/components/ui/capsule-art";
-import { TypeBadge } from "@/components/ui/type-badge";
+import { CommunityFeed } from "@/components/community/community-feed";
 import { getAllProducts, getFeed, getFriends, getLiveRoundtables } from "@/lib/catalog";
-import type { ActivityEvent, Product } from "@/lib/types";
+import type { Friend } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const verbMeta: Record<ActivityEvent["verb"], { text: string; icon: React.ComponentType<{ className?: string }>; tone: string }> = {
-  acquired: { text: "获取了", icon: Plus, tone: "text-accent" },
-  reviewed: { text: "评测了", icon: Star, tone: "text-gold" },
-  published: { text: "更新了", icon: Wrench, tone: "text-green" },
-  roundtable: { text: "", icon: Users, tone: "text-purple" },
-  "installed-skill": { text: "", icon: Trophy, tone: "text-gold" },
-};
-
-function FeedCard({ event, product }: { event: ActivityEvent; product?: Product }) {
-  const meta = verbMeta[event.verb];
-  const Icon = meta.icon;
-  return (
-    <article className="capsule overflow-hidden">
-      {/* 头部：谁、做了什么、何时 */}
-      <div className="flex items-center gap-3 px-4 py-3">
-        <Avatar name={event.actor.name} hue={event.actor.avatarHue} size="md" isAgent={event.actor.isAgent} />
-        <div className="min-w-0 grow">
-          <p className="text-sm leading-snug">
-            <span className="font-semibold">{event.actor.name}</span>{" "}
-            {event.detail ? (
-              <span className="text-dim">{event.detail}</span>
-            ) : (
-              <>
-                <span className="text-dim">{meta.text}</span>{" "}
-                {product && (
-                  <Link href={`/p/${product.slug}`} className="font-medium text-accent hover:underline">
-                    {product.name}
-                  </Link>
-                )}
-              </>
-            )}
-          </p>
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-mute">
-            <Icon className={`size-3 ${meta.tone}`} /> {event.at}
-          </p>
-        </div>
-      </div>
-      {/* 媒体：产品大横幅 */}
-      {product && (
-        <Link href={`/p/${product.slug}`} className="group relative block border-t border-line">
-          <CapsuleArt art={product.art} ratio="banner" iconClassName="max-h-16" />
-          <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/55 to-transparent p-3">
-            <span className="text-sm font-semibold text-white">{product.name}</span>
-            <TypeBadge type={product.type} className="bg-white/85" />
-            <span className="ml-auto flex items-center gap-1 text-xs text-white/80">
-              <Download className="size-3" /> {product.acquisitions.toLocaleString("zh-CN")}
-            </span>
-          </div>
-        </Link>
-      )}
-      {/* 互动条 */}
-      <div className="flex items-center gap-4 border-t border-line px-4 py-2 text-xs text-mute">
-        <button className="transition-colors hover:text-accent">赞</button>
-        <button className="transition-colors hover:text-accent">评论</button>
-        <button className="ml-auto transition-colors hover:text-accent">分享</button>
-      </div>
-    </article>
-  );
+function presenceLabel(p: Friend["presence"]): string {
+  if (p.kind === "using") return p.detail ? `正在使用 ${p.detail}` : "使用中";
+  if (p.kind === "meeting") return p.detail ? `会议中 · ${p.detail}` : "会议中";
+  if (p.kind === "online") return "在线";
+  return "离线";
 }
+
+const dotClass: Record<string, string> = {
+  using: "bg-green",
+  meeting: "bg-green",
+  online: "bg-accent",
+  offline: "bg-mute",
+};
 
 export default async function CommunityPage() {
   const [feed, allProducts, friends] = await Promise.all([getFeed(), getAllProducts(), getFriends()]);
   const roundtables = getLiveRoundtables();
   const productBySlug = new Map(allProducts.map((p) => [p.slug, p]));
   const trending = [...allProducts].sort((a, b) => b.acquisitions - a.acquisitions).slice(0, 5);
-  const onlineFriends = friends.filter((f) => f.presence.kind !== "offline");
+  const online = friends.filter((f) => f.presence.kind !== "offline");
+  const items = feed.map((event) => ({ event, product: event.productSlug ? productBySlug.get(event.productSlug) : undefined }));
 
   return (
     <main className="mx-auto max-w-7xl px-4 pt-8 sm:px-6">
@@ -83,30 +38,41 @@ export default async function CommunityPage() {
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
-        <div className="min-w-0 space-y-4">
-          {feed.map((event) => (
-            <FeedCard key={event.id} event={event} product={event.productSlug ? productBySlug.get(event.productSlug) : undefined} />
-          ))}
+        <div className="min-w-0">
+          <CommunityFeed items={items} />
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-18 lg:self-start">
-          {/* 在线好友 */}
+          {/* 好友在线（含富状态） */}
           {friends.length > 0 && (
             <div className="capsule p-5">
               <h3 className="mb-3 flex items-baseline gap-2 text-sm font-semibold">
-                好友在线 <span className="text-xs font-normal text-mute">{onlineFriends.length}</span>
+                好友在线 <span className="text-xs font-normal text-mute">{online.length}/{friends.length}</span>
               </h3>
-              <div className="grid grid-cols-5 gap-2">
-                {(onlineFriends.length ? onlineFriends : friends).slice(0, 10).map((f) => {
-                  const dot = f.presence.kind === "using" || f.presence.kind === "meeting" ? "bg-green" : f.presence.kind === "online" ? "bg-accent" : "bg-mute";
-                  return (
-                    <Link key={f.handle} href={`/u/${f.handle}`} title={`${f.remark || f.name} · ${f.presence.detail ?? f.presence.kind}`} className="relative">
-                      <Avatar name={f.remark || f.name} hue={f.avatarHue} src={f.avatarUrl} size="md" className={f.presence.kind === "offline" ? "opacity-50" : undefined} />
-                      <span className={`absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-panel ${dot}`} />
+              <ul className="space-y-2.5">
+                {(online.length ? online : friends).slice(0, 8).map((f) => (
+                  <li key={f.handle}>
+                    <Link href={`/u/${f.handle}`} className="group flex items-center gap-2.5">
+                      <span className="relative shrink-0">
+                        <Avatar
+                          name={f.remark || f.name}
+                          hue={f.avatarHue}
+                          src={f.avatarUrl}
+                          size="md"
+                          className={f.presence.kind === "offline" ? "opacity-50" : undefined}
+                        />
+                        <span className={`absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-panel ${dotClass[f.presence.kind] ?? "bg-mute"}`} />
+                      </span>
+                      <span className="min-w-0 grow">
+                        <span className="block truncate text-sm font-medium transition-colors group-hover:text-accent">{f.remark || f.name}</span>
+                        <span className={`block truncate text-[11px] ${f.presence.kind === "using" || f.presence.kind === "meeting" ? "text-green" : "text-mute"}`}>
+                          {presenceLabel(f.presence)}
+                        </span>
+                      </span>
                     </Link>
-                  );
-                })}
-              </div>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

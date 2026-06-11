@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { Clock, Play, Search } from "lucide-react";
 import { CapsuleArt } from "@/components/ui/capsule-art";
 import { typeMeta } from "@/components/ui/type-badge";
@@ -158,8 +159,14 @@ export function LibraryView({ items }: { items: LibItem[] }) {
             <p className="capsule p-8 text-center text-sm text-dim">没有匹配的产品。</p>
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
-              {filtered.map((i) => (
-                <Link key={i.slug} href={launchHref(i)} className="capsule group block overflow-hidden">
+              {filtered.map((i, idx) => (
+                <motion.div
+                  key={i.slug}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: Math.min(idx, 12) * 0.03, ease: "easeOut" }}
+                >
+                <Link href={launchHref(i)} className="capsule group block overflow-hidden">
                   <div className="relative">
                     <CapsuleArt art={i.art} ratio="tall" iconClassName="size-1/3" />
                     <span className="absolute inset-0 flex items-center justify-center bg-ink/40 opacity-0 backdrop-blur-[1px] transition-opacity group-hover:opacity-100">
@@ -173,6 +180,7 @@ export function LibraryView({ items }: { items: LibItem[] }) {
                     <p className="mt-0.5 text-[11px] text-mute">{typeMeta[i.type].label} · {formatPlaytimeShort(i.usageMinutes)}</p>
                   </div>
                 </Link>
+                </motion.div>
               ))}
             </div>
           )}
