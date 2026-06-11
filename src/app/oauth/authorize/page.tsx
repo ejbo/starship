@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { Check, ShieldCheck } from "lucide-react";
 import { approveAction } from "./actions";
 import { Avatar } from "@/components/ui/avatar";
-import { getAppByClientId, ALL_SCOPES } from "@/lib/oauth-service";
+import { ALL_SCOPES, getAppByClientId, getGrantedScopes, issueAuthCode } from "@/lib/oauth-service";
 import { getCurrentUser } from "@/lib/catalog";
 import { getSessionUserIdOrNull } from "@/lib/session";
 
@@ -24,7 +24,8 @@ export default async function AuthorizePage({
   const sp = await searchParams;
   const clientId = sp.client_id ?? "";
 
-  if (!(await getSessionUserIdOrNull())) {
+  const userId = await getSessionUserIdOrNull();
+  if (!userId) {
     const back = encodeURIComponent(`/oauth/authorize?client_id=${clientId}&scope=${sp.scope ?? ""}&redirect_uri=${sp.redirect_uri ?? ""}`);
     redirect(`/login?next=${back}`);
   }
@@ -34,6 +35,18 @@ export default async function AuthorizePage({
   const scopes = (sp.scope ?? "identity")
     .split(/[\s,]+/)
     .filter((s) => (ALL_SCOPES as readonly string[]).includes(s));
+
+  // 之前已授权过这个应用（已授予的 scopes 覆盖本次请求）→ 静默放行，不再显示同意页。
+  // 实现「授权一次后从平台打开即用、无需每次点同意」。
+  if (app && sp.redirect_uri) {
+    const granted = await getGrantedScopes(clientId, userId);
+    if (granted && scopes.every((s) => granted.includes(s))) {
+      const code = await issueAuthCode(clientId, userId, scopes);
+      const sep = sp.redirect_uri.includes("?") ? "&" : "?";
+      const stateParam = sp.state ? `&state=${encodeURIComponent(sp.state)}` : "";
+      redirect(`${sp.redirect_uri}${sep}code=${encodeURIComponent(code)}${stateParam}`);
+    }
+  }
 
   return (
     <div className="mx-auto mt-16 max-w-md px-4">

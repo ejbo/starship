@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     return jsonError(403, "insufficient_scope", "需要 presence:update 授权");
   }
 
-  let body: { activity?: string; secondsActive?: number };
+  let body: { activity?: string; secondsActive?: number; leaving?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -28,6 +28,16 @@ export async function POST(req: Request) {
   }
 
   const { productId, userId } = token;
+
+  // 离开/关闭应用：立即清掉「正在使用」（保留 lastSeenAt → 仍显示在线）
+  if (body.leaving) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { currentActivity: null, activityAt: null },
+    });
+    return NextResponse.json({ ok: true, cleared: true });
+  }
+
   const activity = String(body.activity ?? "").trim().slice(0, 60);
   if (!activity) return jsonError(400, "invalid_request", "activity 必填");
 

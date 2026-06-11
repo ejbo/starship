@@ -81,3 +81,14 @@ export async function resolveAccessToken(token: string): Promise<ResolvedToken |
   });
   return grant ?? null;
 }
+
+/** 该 (app, user) 是否已有授权记录 → 返回已授予的 scopes（用于"授权一次后静默放行"） */
+export async function getGrantedScopes(clientId: string, userId: string): Promise<string[] | null> {
+  const app = await prisma.product.findUnique({ where: { clientId }, select: { id: true } });
+  if (!app) return null;
+  const grant = await prisma.oAuthGrant.findUnique({
+    where: { productId_userId: { productId: app.id, userId } },
+    select: { scopes: true },
+  });
+  return grant?.scopes ?? null;
+}
