@@ -55,8 +55,26 @@ const prisma = new PrismaClient({
   ),
 });
 
+/** 防误清：DATABASE_URL 指向远程（非本机）库时，破坏性重灌需显式 SEED_ALLOW_REMOTE=1 */
+function assertNotRemoteWipe() {
+  if (process.env.SEED_FORCE !== "1") return;
+  let host = "";
+  try {
+    host = new URL(process.env.DATABASE_URL ?? "").hostname;
+  } catch {}
+  const isLocal = host === "localhost" || host === "127.0.0.1" || host === "" || host === "::1";
+  if (!isLocal && process.env.SEED_ALLOW_REMOTE !== "1") {
+    console.error(
+      `\n⛔ 拒绝清库：DATABASE_URL 指向远程库（${host}）。\n` +
+        `   这会清空线上数据。若确实要清线上库重灌，请显式：SEED_ALLOW_REMOTE=1 pnpm db:reset\n`,
+    );
+    process.exit(1);
+  }
+}
+
 async function main() {
   const force = process.env.SEED_FORCE === "1";
+  assertNotRemoteWipe();
   const existing = await prisma.user.count();
   if (existing > 0 && !force) {
     console.log(`数据库已有 ${existing} 个用户，跳过种子（不清库）。如需清库重灌：pnpm db:reset`);
