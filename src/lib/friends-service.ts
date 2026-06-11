@@ -26,6 +26,26 @@ function derivePresence(u: {
   return { kind: u.presenceKind as PresenceKind, detail: u.presenceDetail ?? undefined };
 }
 
+export type DerivedPresence = { kind: PresenceKind; detail?: string; appSlug?: string };
+
+/**
+ * 当前用户自己的状态：本人正在会话中 → 恒「在线」；若在用应用且未过期 → 「正在使用 X」。
+ * 用于社交坞顶栏与个人主页的自我状态展示（不能照搬好友逻辑，否则会落到种子兜底）。
+ */
+export async function getMyPresence(): Promise<DerivedPresence> {
+  const userId = await getSessionUserIdOrNull();
+  if (!userId) return { kind: "offline" };
+  const u = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { currentActivity: true, currentActivitySlug: true, activityAt: true },
+  });
+  if (!u) return { kind: "offline" };
+  if (u.currentActivity && u.activityAt && Date.now() - Date.parse(u.activityAt) < ACTIVITY_WINDOW_MS) {
+    return { kind: "using", detail: u.currentActivity, appSlug: u.currentActivitySlug ?? undefined };
+  }
+  return { kind: "online" };
+}
+
 /** 更新当前用户的最近活跃时间（在已登录布局调用） */
 export async function touchPresence(): Promise<void> {
   const userId = await getSessionUserIdOrNull();

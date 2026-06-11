@@ -4,9 +4,11 @@ import {
   acceptFriendRequest,
   getFriendsWithPresence,
   getIncomingRequests,
+  getMyPresence,
   removeFriend,
   sendFriendRequest,
   setFriendRemark,
+  type DerivedPresence,
   type FriendRequestView,
 } from "@/lib/friends-service";
 import {
@@ -61,15 +63,17 @@ export interface PollResult {
   messages: IncomingMessage[];
   friends: Friend[];
   requests: FriendRequestView[];
+  myPresence: DerivedPresence;
 }
 
-/** 轮询：自 since 起的新消息 + 最新好友/请求/在线状态 */
+/** 轮询：自 since 起的新消息 + 最新好友/请求/在线状态 + 本人状态 */
 export async function pollUpdatesAction(since: string): Promise<PollResult> {
   const now = new Date().toISOString();
-  const [messages, friends, requests] = await Promise.all([
+  const [messages, friends, requests, myPresence] = await Promise.all([
     getIncomingSince(since),
     getFriendsWithPresence(),
     getIncomingRequests(),
+    getMyPresence(),
   ]);
-  return { now, messages, friends, requests };
+  return { now, messages, friends, requests, myPresence };
 }

@@ -13,6 +13,7 @@ export const SCOPES: Record<string, string> = {
   "stats:write": "记录用户在该应用的游戏时长与统计",
   "presence:update": "更新用户「正在使用该应用」的实时状态并累计使用时长",
   "gateway:llm": "用用户在平台配置的密钥经 Gateway 调用大模型（应用拿不到明文 Key）",
+  "keys:read": "⚠️ 导出用户在平台配置的 API 密钥【明文】供应用一键导入（密钥离开平台；面向自带 provider 的应用）",
 };
 
 export interface EndpointParam {
@@ -123,6 +124,16 @@ export const ENDPOINTS: Endpoint[] = [
       { name: "secondsActive", in: "body", type: "number", required: false, description: "距上次心跳的活跃秒数，累加进使用时长（单次上限 120s）" },
     ],
     responseExample: { ok: true },
+  },
+  {
+    id: "keys.read",
+    method: "GET",
+    path: "/api/v1/keys",
+    summary: "⚠️ 导出用户在平台配置的 API 密钥【明文】，供应用一键导入其自有配置（密钥离开平台）",
+    auth: "bearer",
+    scope: "keys:read",
+    params: [],
+    responseExample: { keys: [{ provider: "anthropic", label: "默认", last4: "ab12", secret: "sk-ant-..." }] },
   },
   {
     id: "stats.global",

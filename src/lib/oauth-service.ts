@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
 import { generateAccessToken, generateAuthCode } from "@/lib/tokens";
 
-export const ALL_SCOPES = ["identity", "achievements:write", "stats:write", "presence:update", "gateway:llm"] as const;
+export const ALL_SCOPES = ["identity", "achievements:write", "stats:write", "presence:update", "gateway:llm", "keys:read"] as const;
 export type Scope = (typeof ALL_SCOPES)[number];
 
 const CODE_TTL_MS = 10 * 60 * 1000;

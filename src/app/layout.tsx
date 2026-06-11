@@ -3,7 +3,7 @@ import { SocialLayer } from "@/components/social/social-layer";
 import { GlobalNav } from "@/components/global-nav";
 import { SiteFooter } from "@/components/site-footer";
 import { getCurrentUser } from "@/lib/catalog";
-import { getFriendsWithPresence, getIncomingRequests, getMyFriendCode, touchPresence } from "@/lib/friends-service";
+import { getFriendsWithPresence, getIncomingRequests, getMyFriendCode, getMyPresence, touchPresence } from "@/lib/friends-service";
 import { getUnreadCount } from "@/lib/notification-service";
 import "./globals.css";
 
@@ -17,9 +17,9 @@ export default async function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const user = await getCurrentUser();
   if (user) await touchPresence();
-  const [friends, requests, myCode, unread] = user
-    ? await Promise.all([getFriendsWithPresence(), getIncomingRequests(), getMyFriendCode(), getUnreadCount()])
-    : [[], [], null, 0];
+  const [friends, requests, myCode, unread, myPresence] = user
+    ? await Promise.all([getFriendsWithPresence(), getIncomingRequests(), getMyFriendCode(), getUnreadCount(), getMyPresence()])
+    : [[], [], null, 0, { kind: "offline" as const }];
 
   return (
     <html lang="zh-CN">
@@ -31,7 +31,7 @@ export default async function RootLayout({
         <SiteFooter />
         {user && (
           <SocialLayer
-            me={{ handle: user.handle, name: user.name, avatarHue: user.avatarHue, avatarUrl: user.avatarUrl, friendCode: myCode }}
+            me={{ handle: user.handle, name: user.name, avatarHue: user.avatarHue, avatarUrl: user.avatarUrl, friendCode: myCode, presence: myPresence }}
             initialFriends={friends}
             initialRequests={requests}
           />

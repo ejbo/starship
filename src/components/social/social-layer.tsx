@@ -4,7 +4,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
-  ChevronDown,
   Copy,
   Download,
   FileText,
@@ -42,6 +41,7 @@ export interface Me {
   avatarHue: number;
   avatarUrl: string | null;
   friendCode: string | null;
+  presence: { kind: PresenceKind; detail?: string; appSlug?: string };
 }
 
 interface Conversation {
@@ -150,6 +150,7 @@ export function SocialLayer({
 }) {
   const [friends, setFriends] = useState<Friend[]>(initialFriends);
   const [requests, setRequests] = useState<FriendRequestView[]>(initialRequests);
+  const [myPresence, setMyPresence] = useState(me.presence);
   const [dockOpen, setDockOpen] = useState(false);
   const [view, setView] = useState<"list" | "add">("list");
   const [query, setQuery] = useState("");
@@ -262,6 +263,7 @@ export function SocialLayer({
         sinceRef.current = res.now;
         setFriends(res.friends);
         setRequests(res.requests);
+        setMyPresence(res.myPresence);
         for (const m of res.messages) {
           const conv = m.from;
           const msg: ChatMessage = {
@@ -400,6 +402,7 @@ export function SocialLayer({
               ) : (
                 <FriendsPanel
                   me={me}
+                  myPresence={myPresence}
                   friends={friends}
                   requestCount={requests.length}
                   query={query}
@@ -525,6 +528,7 @@ function StatusGroup({
 
 function FriendsPanel({
   me,
+  myPresence,
   friends,
   requestCount,
   query,
@@ -535,6 +539,7 @@ function FriendsPanel({
   onContextMenu,
 }: {
   me: Me;
+  myPresence: { kind: PresenceKind; detail?: string; appSlug?: string };
   friends: Friend[];
   requestCount: number;
   query: string;
@@ -554,13 +559,19 @@ function FriendsPanel({
       <div className="flex items-center gap-2.5 border-b border-line px-3 py-2.5">
         <span className="relative">
           <Avatar name={me.name} hue={me.avatarHue} src={me.avatarUrl} size="sm" />
-          <span className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full bg-accent ring-2 ring-panel" />
+          <span className={cn("absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-panel", presenceMeta[myPresence.kind].dot)} />
         </span>
         <div className="min-w-0 leading-tight">
           <p className="truncate text-sm font-semibold">{me.name}</p>
-          <button className="flex items-center gap-0.5 text-[11px] text-accent">
-            在线 <ChevronDown className="size-3" />
-          </button>
+          {myPresence.kind === "using" && myPresence.appSlug ? (
+            <a href={`/p/${myPresence.appSlug}`} className={cn("flex items-center gap-0.5 truncate text-[11px]", presenceMeta[myPresence.kind].tone)}>
+              {presenceMeta[myPresence.kind].text(myPresence.detail)}
+            </a>
+          ) : (
+            <span className={cn("flex items-center gap-0.5 text-[11px]", presenceMeta[myPresence.kind].tone)}>
+              {presenceMeta[myPresence.kind].text(myPresence.detail)}
+            </span>
+          )}
         </div>
         <div className="ml-auto flex items-center gap-0.5">
           <button onClick={onAdd} className="relative rounded-lg p-1.5 text-dim transition-colors hover:bg-card-hi hover:text-ink" aria-label="添加好友" title="添加好友">

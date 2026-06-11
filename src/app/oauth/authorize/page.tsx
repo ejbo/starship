@@ -14,6 +14,7 @@ const scopeLabels: Record<string, string> = {
   "stats:write": "记录你在该应用的游戏时长与统计",
   "presence:update": "显示你「正在使用该应用」并累计使用时长",
   "gateway:llm": "用你在平台配置的密钥经 Gateway 调用大模型",
+  "keys:read": "⚠️ 导入你在星港配置的 API 密钥到该应用（密钥将离开平台、明文交给该应用）",
 };
 
 export default async function AuthorizePage({
