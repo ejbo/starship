@@ -174,7 +174,8 @@ export function HeroCarousel({ products, ranks }: { products: Product[]; ranks?:
       onMouseEnter={() => (pausedRef.current = true)}
       onMouseLeave={() => (pausedRef.current = false)}
     >
-      <div className="mb-3 flex items-center justify-between">
+      {/* 标题行保持与下方内容同宽对齐 */}
+      <div className="mx-auto mb-3 flex max-w-7xl items-center justify-between px-4 sm:px-6">
         <h2 className="text-lg font-bold">精选与推荐</h2>
         <Link
           href="/developer"
@@ -191,14 +192,14 @@ export function HeroCarousel({ products, ranks }: { products: Product[]; ranks?:
             <button
               aria-label="上一个"
               onClick={() => go(-1)}
-              className="absolute -left-3 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-line bg-panel/90 p-2 text-dim shadow-sm backdrop-blur transition-colors hover:text-accent lg:block"
+              className="absolute left-4 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-line bg-panel/90 p-2 text-dim shadow-sm backdrop-blur transition-colors hover:text-accent lg:block"
             >
               <ChevronLeft className="size-5" />
             </button>
             <button
               aria-label="下一个"
               onClick={() => go(1)}
-              className="absolute -right-3 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-line bg-panel/90 p-2 text-dim shadow-sm backdrop-blur transition-colors hover:text-accent lg:block"
+              className="absolute right-4 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-line bg-panel/90 p-2 text-dim shadow-sm backdrop-blur transition-colors hover:text-accent lg:block"
             >
               <ChevronRight className="size-5" />
             </button>
@@ -213,7 +214,8 @@ export function HeroCarousel({ products, ranks }: { products: Product[]; ranks?:
             style={{ transform: `translateX(${offset}px)` }}
           >
             {display.map((p, i) => (
-              <div key={`${p.id}-${i}`} className="relative w-[92%] shrink-0 sm:w-[88%] lg:w-[82%]">
+              // 中心卡宽 = 下方内容宽（max-w-7xl 减去左右 padding，封顶 77rem），两侧自然露出前后卡填满全宽
+              <div key={`${p.id}-${i}`} className="relative w-[min(100%_-_2rem,77rem)] shrink-0 sm:w-[min(100%_-_3rem,77rem)]">
                 <FeaturedCard product={p} rank={ranks?.[p.slug]} active={i === index} />
                 {i !== index && (
                   <button

@@ -26,6 +26,7 @@ export default async function ProfileSettingsPage() {
         signature={profile.signature}
         avatarHue={profile.avatarHue}
         avatarUrl={profile.avatarUrl}
+        bannerUrl={profile.profileBannerUrl}
       />
     </main>
   );

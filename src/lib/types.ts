@@ -61,15 +61,29 @@ export interface Product {
 
 export type PresenceKind = "online" | "using" | "meeting" | "offline";
 
+/** 正在使用的应用图标（好友列表行首小图标） */
+export interface AppIconArt {
+  capsuleUrl: string | null;
+  hueA: number;
+  hueB: number;
+  icon: string;
+}
+
 export interface Friend {
   handle: string;
   name: string;
-  /** 我给该好友起的备注（仅自己可见），优先于 name 展示 */
+  /** 我给该好友起的备注（仅自己可见），列表里以「名字（备注）」展示 */
   remark?: string | null;
   avatarHue: number;
   avatarUrl?: string | null;
   level: number;
-  presence: { kind: PresenceKind; detail?: string; appSlug?: string };
+  /** 最近在线时间（ISO）；离线好友展示「最后在线 X 前」 */
+  lastSeenAt?: string | null;
+  /** 资料背景（悬停卡）：图片/GIF dataURL 或图片/mp4/webm 直链 */
+  bannerUrl?: string | null;
+  /** 展示徽章（悬停卡），取用户徽章第一枚 */
+  badge?: { label: string; icon: string } | null;
+  presence: { kind: PresenceKind; detail?: string; appSlug?: string; appIcon?: AppIconArt | null };
 }
 
 export interface CurrentUser {

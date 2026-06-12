@@ -202,6 +202,7 @@ export interface CurrentUserView {
   tokenBalance: string;
   gatewayTokens: number;
   credits: number;
+  bannerUrl: string | null;
   library: { slug: string; acquiredAt: string; lastUsedAt?: string; usageHours: number; usageMinutes: number }[];
 }
 
@@ -227,6 +228,7 @@ export async function getCurrentUser(): Promise<CurrentUserView | null> {
     tokenBalance: me.tokenBalance,
     gatewayTokens: me.gatewayTokens,
     credits: me.credits,
+    bannerUrl: me.profileBannerUrl,
     library: me.library
       .map((e) => ({
         slug: e.product.slug,

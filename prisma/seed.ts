@@ -185,8 +185,23 @@ async function main() {
     create: { userId: me.id, productId: demoApp.id, acquiredAt: "2026-06-09", lastUsedAt: "2026-06-09", usageHours: 2 },
   });
 
+  // 离线好友的「最后在线」与资料背景（好友悬停卡演示；shanyue 用视频体现动态背景）
+  const now = Date.now();
+  const iso = (minsAgo: number) => new Date(now - minsAgo * 60_000).toISOString();
+  const U = (id: string, w: number) => `https://images.unsplash.com/${id}?w=${w}&q=70&auto=format&fit=crop`;
+  const FRIEND_EXTRAS: Record<string, { lastSeenMinsAgo?: number; banner?: string }> = {
+    linyuan: { banner: U("photo-1451187580459-43490279c0fa", 800) },
+    bluewhale: { banner: U("photo-1526374965328-7f61d4dc18c5", 800) },
+    azhi: { banner: U("photo-1620641788421-7a1c342ea42e", 800) },
+    shanyue: { banner: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" },
+    chenzhou: { lastSeenMinsAgo: 5 * 60 },
+    oldcat: { lastSeenMinsAgo: 26 * 60 },
+    qingteng: { lastSeenMinsAgo: 3 * 24 * 60 },
+  };
+
   const friendByHandle = new Map<string, string>();
   for (const f of friends) {
+    const extra = FRIEND_EXTRAS[f.handle] ?? {};
     const friend = await prisma.user.create({
       data: {
         handle: f.handle,
@@ -199,15 +214,13 @@ async function main() {
         // 种子展示状态（好友未真实登录时由 friends-service 兜底使用）
         presenceKind: f.presence.kind,
         presenceDetail: f.presence.detail ?? null,
+        lastSeenAt: extra.lastSeenMinsAgo ? iso(extra.lastSeenMinsAgo) : null,
+        profileBannerUrl: extra.banner ?? null,
       },
     });
     friendByHandle.set(f.handle, friend.id);
     await prisma.friendEdge.create({ data: { aId: me.id, bId: friend.id, status: "accepted" } });
   }
-
-  // 历史聊天记录（me 与各好友），at 用相对当下的偏移 ISO
-  const now = Date.now();
-  const iso = (minsAgo: number) => new Date(now - minsAgo * 60_000).toISOString();
   const chatSeed: Array<[string, Array<["me" | "friend", string, number]>]> = [
     ["linyuan", [["friend", "你上次说的那个对比技巧，怎么设置来着？", 1440], ["me", "新建会话选「双栏」，左边固定 Claude", 1435], ["friend", "好使，今天省了一半时间", 120]]],
     ["bluewhale", [["friend", "周五圆桌我把新驯的纪要 Agent 带上", 300], ["friend", "它现在能区分结论和待办了", 299]]],
@@ -227,6 +240,49 @@ async function main() {
         },
       });
     }
+  }
+
+  // 群组聊天种子：周五圆桌组（多频道 + 历史消息）
+  const groupMemberIds = ["linyuan", "bluewhale", "azhi", "shanyue"]
+    .map((h) => friendByHandle.get(h))
+    .filter((id): id is string => !!id);
+  const group = await prisma.chatGroup.create({
+    data: {
+      name: "周五圆桌组",
+      ownerId: me.id,
+      createdAt: iso(7 * 24 * 60),
+      members: {
+        create: [{ userId: me.id, joinedAt: iso(7 * 24 * 60) }, ...groupMemberIds.map((userId) => ({ userId, joinedAt: iso(7 * 24 * 60) }))],
+      },
+      channels: {
+        create: [
+          { name: "大厅", kind: "text", sort: 0 },
+          { name: "资料分享", kind: "text", sort: 1 },
+          { name: "圆桌语音", kind: "voice", sort: 2 },
+        ],
+      },
+    },
+    include: { channels: true },
+  });
+  const hall = group.channels.find((c) => c.name === "大厅")!;
+  const share = group.channels.find((c) => c.name === "资料分享")!;
+  const groupChat: Array<[string, string, number]> = [
+    ["bluewhale", "周五圆桌确认一下时间，还是晚上八点？", 26 * 60],
+    ["linyuan", "可以，我提前把对比测试跑完", 25 * 60 + 40],
+    ["azhi", "纪要 Agent 我带新的来，这次能区分结论和待办", 25 * 60 + 20],
+    ["me", "OK，八点见。开了个「资料分享」频道，材料丢那边", 24 * 60],
+    ["shanyue", "收到 👌", 23 * 60 + 50],
+  ];
+  for (const [h, body, minsAgo] of groupChat) {
+    const fromId = h === "me" ? me.id : friendByHandle.get(h);
+    if (!fromId) continue;
+    await prisma.groupMessage.create({ data: { groupId: group.id, channelId: hall.id, fromId, body, at: iso(minsAgo) } });
+  }
+  const linyuanId = friendByHandle.get("linyuan");
+  if (linyuanId) {
+    await prisma.groupMessage.create({
+      data: { groupId: group.id, channelId: share.id, fromId: linyuanId, body: "上周说的多模型对比表格整理好了，回头发这里", at: iso(20 * 60) },
+    });
   }
 
   const productBySlug = new Map(products.map((p) => [p.slug, p.id]));
@@ -318,6 +374,8 @@ async function main() {
     activity: await prisma.activityEvent.count(),
     credentials: await prisma.apiCredential.count(),
     usageRecords: await prisma.usageRecord.count(),
+    chatGroups: await prisma.chatGroup.count(),
+    groupMessages: await prisma.groupMessage.count(),
   };
   console.log("Seeded:", counts);
 }

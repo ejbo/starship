@@ -45,6 +45,9 @@ export async function getConversationPage(handle: string, beforeIso?: string): P
   const other = await prisma.user.findUnique({ where: { handle }, select: { id: true } });
   if (!other) return { messages: [], hasMore: false };
 
+  // 打开会话即视为已读（持久化未读角标的清除）
+  await prisma.message.updateMany({ where: { fromId: other.id, toId: userId, read: false }, data: { read: true } });
+
   const rows = await prisma.message.findMany({
     where: {
       OR: [
@@ -117,11 +120,36 @@ export async function sendMessage(handle: string, body: string, input: SendInput
   };
 }
 
-/** 自 sinceIso 之后、发给我的新消息（轮询用） */
-export async function getIncomingSince(sinceIso: string): Promise<IncomingMessage[]> {
+/** 各好友发给我的未读消息数（恢复持久化未读角标用） */
+export async function getUnreadCounts(): Promise<Record<string, number>> {
+  const userId = await getSessionUserId();
+  const groups = await prisma.message.groupBy({
+    by: ["fromId"],
+    where: { toId: userId, read: false },
+    _count: { id: true },
+  });
+  if (groups.length === 0) return {};
+  const users = await prisma.user.findMany({
+    where: { id: { in: groups.map((g) => g.fromId) } },
+    select: { id: true, handle: true },
+  });
+  const handleById = new Map(users.map((u) => [u.id, u.handle]));
+  const counts: Record<string, number> = {};
+  for (const g of groups) {
+    const h = handleById.get(g.fromId);
+    if (h) counts[h] = g._count.id;
+  }
+  return counts;
+}
+
+/**
+ * (sinceIso, untilIso] 区间内发给我的新消息（轮询用）。
+ * until 上界必须与游标推进值一致，否则查询执行期间落库的消息会在下一轮重复投递。
+ */
+export async function getIncomingSince(sinceIso: string, untilIso: string): Promise<IncomingMessage[]> {
   const userId = await getSessionUserId();
   const rows = await prisma.message.findMany({
-    where: { toId: userId, at: { gt: sinceIso } },
+    where: { toId: userId, at: { gt: sinceIso, lte: untilIso } },
     orderBy: { at: "asc" },
     select: {
       id: true,

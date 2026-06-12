@@ -51,6 +51,8 @@ model User {
   /// 种子/兜底展示状态（好友未真实登录时使用）：online|using|meeting|offline
   presenceKind String          @default("offline")
   presenceDetail String?
+  /// 资料背景（好友悬停卡展示）：图片/GIF dataURL 或图片/mp4/webm 直链，可动态
+  profileBannerUrl String?
   library      LibraryEntry[]
   wishlist     WishlistEntry[]
   creditTxns   CreditTransaction[]
@@ -63,6 +65,63 @@ model User {
   achievements AchievementUnlock[]
   messagesSent     Message[]   @relation("MsgFrom")
   messagesReceived Message[]   @relation("MsgTo")
+  groupMemberships ChatGroupMember[]
+  groupMessages    GroupMessage[]
+}
+
+/// 群组聊天（Steam 式 Group Chat：多人 + 多频道）
+model ChatGroup {
+  id        String            @id @default(cuid())
+  /// 群名；空字符串 = 按成员名自动命名（"A、B 和 C"）
+  name      String            @default("")
+  ownerId   String
+  createdAt String
+  members   ChatGroupMember[]
+  channels  ChatChannel[]
+  messages  GroupMessage[]
+}
+
+model ChatGroupMember {
+  id       String    @id @default(cuid())
+  groupId  String
+  userId   String
+  joinedAt String
+  group    ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+/// 群内频道：text 文字频道 / voice 语音频道（原型占位）
+model ChatChannel {
+  id       String         @id @default(cuid())
+  groupId  String
+  name     String
+  kind     String         @default("text")
+  sort     Int            @default(0)
+  group    ChatGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  messages GroupMessage[]
+}
+
+model GroupMessage {
+  id             String      @id @default(cuid())
+  groupId        String
+  channelId      String
+  fromId         String
+  /// text | image | file
+  kind           String      @default("text")
+  body           String
+  attachmentUrl  String?
+  attachmentName String?
+  /// ISO 字符串
+  at             String
+  group          ChatGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  channel        ChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  from           User        @relation(fields: [fromId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, at])
+  @@index([groupId, at])
 }
 
 /// 好友备注（我给某好友起的别名，仅自己可见）

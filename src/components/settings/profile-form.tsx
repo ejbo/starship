@@ -1,9 +1,9 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { Copy, Trash2, Upload } from "lucide-react";
+import { Copy, Link2, Trash2, Upload } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
-import { updateAvatarAction, updateProfileAction } from "@/app/settings/profile/actions";
+import { updateAvatarAction, updateBannerAction, updateProfileAction } from "@/app/settings/profile/actions";
 
 interface ProfileFormProps {
   handle: string;
@@ -12,6 +12,43 @@ interface ProfileFormProps {
   signature: string;
   avatarHue: number;
   avatarUrl: string | null;
+  bannerUrl: string | null;
+}
+
+const isVideoBanner = (url: string) => /^data:video\//.test(url) || /\.(mp4|webm)(\?|#|$)/i.test(url);
+
+/** banner 上传：GIF 原样保留动画（限 2MB），其余压到 1280 宽 JPEG */
+function fileToBannerDataUrl(file: File): Promise<string> {
+  if (file.type === "image/gif") {
+    if (file.size > 2_000_000) return Promise.reject(new Error("GIF 过大（上限 2MB）"));
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("文件读取失败"));
+      reader.readAsDataURL(file);
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const w = Math.min(1280, img.width);
+      const h = Math.round((w / img.width) * img.height);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return reject(new Error("无法处理图片"));
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", 0.82));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("图片读取失败"));
+    };
+    img.src = url;
+  });
 }
 
 /** 客户端把图片缩放到 256×256 的 JPEG dataURL，控制体积 */
@@ -42,12 +79,16 @@ function fileToAvatarDataUrl(file: File): Promise<string> {
   });
 }
 
-export function ProfileForm({ handle, friendCode, name, signature, avatarHue, avatarUrl }: ProfileFormProps) {
+export function ProfileForm({ handle, friendCode, name, signature, avatarHue, avatarUrl, bannerUrl }: ProfileFormProps) {
   const [displayName, setDisplayName] = useState(name);
   const [hue, setHue] = useState(avatarHue);
   const [avatar, setAvatar] = useState<string | null>(avatarUrl);
   const [avatarMsg, setAvatarMsg] = useState<string | null>(null);
+  const [banner, setBanner] = useState<string | null>(bannerUrl);
+  const [bannerMsg, setBannerMsg] = useState<string | null>(null);
+  const [bannerLink, setBannerLink] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const bannerFileRef = useRef<HTMLInputElement>(null);
   const [pending, start] = useTransition();
   const [saved, setSaved] = useState<null | { ok: boolean; error?: string }>(null);
   const [copied, setCopied] = useState(false);
@@ -73,6 +114,27 @@ export function ProfileForm({ handle, friendCode, name, signature, avatarHue, av
     if (res.ok) {
       setAvatar(null);
       setAvatarMsg("已恢复色相头像");
+    }
+  };
+
+  const saveBanner = async (url: string) => {
+    setBannerMsg("处理中…");
+    const res = await updateBannerAction(url);
+    if (res.ok) {
+      setBanner(url || null);
+      setBannerMsg(url ? "已更新资料背景" : "已移除资料背景");
+      setBannerLink("");
+    } else {
+      setBannerMsg(res.error ?? "保存失败");
+    }
+  };
+
+  const onPickBanner = async (file: File) => {
+    setBannerMsg("处理中…");
+    try {
+      await saveBanner(await fileToBannerDataUrl(file));
+    } catch (e) {
+      setBannerMsg(e instanceof Error ? e.message : "上传失败");
     }
   };
 
@@ -211,7 +273,74 @@ export function ProfileForm({ handle, friendCode, name, signature, avatarHue, av
           )}
         </div>
         {avatarMsg && <p className="mt-2 text-[11px] text-mute">{avatarMsg}</p>}
-        <div className="mt-4 border-t border-line pt-3">
+
+        {/* 资料背景（好友悬停卡）：支持静图 / GIF / 视频直链，动态展示 */}
+        <div className="mt-4 border-t border-line pt-3 text-left">
+          <p className="mb-2 text-xs text-dim">资料背景（好友把鼠标悬停在你头上时展示，支持 GIF / 视频动态）</p>
+          <div className="relative h-20 overflow-hidden rounded-lg border border-line bg-card-hi">
+            {banner ? (
+              isVideoBanner(banner) ? (
+                <video src={banner} autoPlay loop muted playsInline className="size-full object-cover" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={banner} alt="资料背景" className="size-full object-cover" />
+              )
+            ) : (
+              <div
+                className="size-full"
+                style={{ background: `linear-gradient(130deg, hsl(${hue} 55% 78%), hsl(${(hue + 50) % 360} 50% 62%))` }}
+                title="未设置时按头像色相生成"
+              />
+            )}
+          </div>
+          <input
+            ref={bannerFileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onPickBanner(f);
+              e.target.value = "";
+            }}
+          />
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => bannerFileRef.current?.click()}
+              className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs text-dim transition-colors hover:border-accent/40 hover:text-accent"
+            >
+              <Upload className="size-3.5" /> 上传图片/GIF
+            </button>
+            {banner && (
+              <button
+                type="button"
+                onClick={() => saveBanner("")}
+                className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs text-dim transition-colors hover:border-danger/40 hover:text-danger"
+              >
+                <Trash2 className="size-3.5" /> 移除
+              </button>
+            )}
+          </div>
+          <div className="mt-2 flex items-center gap-1.5">
+            <Link2 className="size-3.5 shrink-0 text-mute" />
+            <input
+              value={bannerLink}
+              onChange={(e) => setBannerLink(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && bannerLink.trim()) {
+                  e.preventDefault();
+                  saveBanner(bannerLink.trim());
+                }
+              }}
+              placeholder="或粘贴图片 / mp4 / webm 直链后回车"
+              className="w-full rounded-md border border-line bg-page px-2 py-1 text-xs focus:border-accent focus:outline-none"
+            />
+          </div>
+          {bannerMsg && <p className="mt-1.5 text-[11px] text-mute">{bannerMsg}</p>}
+        </div>
+
+        <div className="mt-4 border-t border-line pt-3 text-center">
           <p className="text-lg font-bold">{displayName || handle}</p>
           <p className="text-xs text-mute">@{handle} · {friendCode}</p>
         </div>

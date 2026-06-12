@@ -3,7 +3,6 @@ import { DiscoveryQueue } from "@/components/store/discovery-queue";
 import { HeroCarousel } from "@/components/store/hero-carousel";
 import { PromoBanner } from "@/components/store/promo-banner";
 import { SectionRow } from "@/components/store/section-row";
-import { StoreSubnav } from "@/components/store/store-subnav";
 import { TopCharts } from "@/components/store/top-charts";
 import { Reveal } from "@/components/ui/reveal";
 import { getActiveBanners } from "@/lib/admin-service";
@@ -43,39 +42,42 @@ export default async function StorePage() {
   return (
     <>
       {/* 全宽首发横幅（仿 Steam）：满屏出血，并上移到悬浮导航之下，让玻璃导航浮在 CG 之上 */}
-      <div className="-mt-[68px]">
-        <PromoBanner
-          banners={banners.map((b) => ({
-            title: b.title,
-            subtitle: b.subtitle,
-            badge: b.badge,
-            imageUrl: b.imageUrl,
-            videoUrl: b.videoUrl,
-            href: b.href,
-          }))}
-        />
-      </div>
-      {/* 浏览 / 推荐 / 分类：移到动态横幅下方 */}
-      <StoreSubnav />
-      <main className="mx-auto max-w-7xl space-y-10 px-4 pt-6 sm:px-6">
+      {banners.length > 0 && (
+        <div className="-mt-[68px]">
+          <PromoBanner
+            banners={banners.map((b) => ({
+              title: b.title,
+              subtitle: b.subtitle,
+              badge: b.badge,
+              imageUrl: b.imageUrl,
+              videoUrl: b.videoUrl,
+              href: b.href,
+            }))}
+          />
+        </div>
+      )}
+      <main className="space-y-10 pt-6">
+        {/* 精选轮播全出血：中心卡与下方内容同宽，前后卡填满两侧剩余空间 */}
         <HeroCarousel products={featured} ranks={ranks} />
-        {discounted.length > 0 && <Reveal><SectionRow title="限时特惠" products={discounted} /></Reveal>}
-        <Reveal><CategoryTiles /></Reveal>
-        <Reveal>
-          <div id="discovery" className="scroll-mt-28">
-            <DiscoveryQueue products={discovery} />
-          </div>
-        </Reveal>
-        <Reveal>
-          <div id="charts" className="scroll-mt-28">
-            <TopCharts tabs={chartTabs} />
-          </div>
-        </Reveal>
-        <Reveal><SectionRow title="热门应用" products={apps} /></Reveal>
-        <Reveal><SectionRow title="AI 模型" products={models} /></Reveal>
-        <Reveal><SectionRow title="Agent" products={agents} /></Reveal>
-        <Reveal><SectionRow title="Skill 工坊" products={skills} /></Reveal>
-        <Reveal><SectionRow title="教程与视频" products={[...tutorials, ...videos]} /></Reveal>
+        <div className="mx-auto max-w-7xl space-y-10 px-4 sm:px-6">
+          {discounted.length > 0 && <Reveal><SectionRow title="限时特惠" products={discounted} /></Reveal>}
+          <Reveal><CategoryTiles /></Reveal>
+          <Reveal>
+            <div id="discovery" className="scroll-mt-28">
+              <DiscoveryQueue products={discovery} />
+            </div>
+          </Reveal>
+          <Reveal>
+            <div id="charts" className="scroll-mt-28">
+              <TopCharts tabs={chartTabs} />
+            </div>
+          </Reveal>
+          <Reveal><SectionRow title="热门应用" products={apps} /></Reveal>
+          <Reveal><SectionRow title="AI 模型" products={models} /></Reveal>
+          <Reveal><SectionRow title="Agent" products={agents} /></Reveal>
+          <Reveal><SectionRow title="Skill 工坊" products={skills} /></Reveal>
+          <Reveal><SectionRow title="教程与视频" products={[...tutorials, ...videos]} /></Reveal>
+        </div>
       </main>
     </>
   );

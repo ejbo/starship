@@ -34,6 +34,8 @@ export const friends: Friend[] = [
   { handle: "oldcat", name: "老猫", avatarHue: 40, level: 35, presence: { kind: "offline" } },
   { handle: "xiaoman", name: "小满", avatarHue: 95, level: 12, presence: { kind: "using", detail: "银河阅读器" } },
   { handle: "shanyue", name: "山月", avatarHue: 130, level: 28, presence: { kind: "online" } },
+  { handle: "chenzhou", name: "沉舟", avatarHue: 260, level: 22, presence: { kind: "offline" } },
+  { handle: "qingteng", name: "青藤", avatarHue: 70, level: 8, presence: { kind: "offline" } },
 ];
 
 /** 留言板（个人主页静态展示） */

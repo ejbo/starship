@@ -9,13 +9,14 @@ export interface EditableProfile {
   signature: string;
   avatarHue: number;
   avatarUrl: string | null;
+  profileBannerUrl: string | null;
 }
 
 export async function getEditableProfile(): Promise<EditableProfile> {
   const userId = await getSessionUserId();
   const u = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { handle: true, friendCode: true, name: true, signature: true, avatarHue: true, avatarUrl: true },
+    select: { handle: true, friendCode: true, name: true, signature: true, avatarHue: true, avatarUrl: true, profileBannerUrl: true },
   });
   return u;
 }
@@ -66,6 +67,24 @@ export async function updateAvatar(dataUrl: string): Promise<void> {
   if (!/^data:image\/(png|jpeg|webp);base64,/.test(dataUrl)) throw new Error("仅支持 PNG/JPEG/WebP 图片");
   if (dataUrl.length > MAX_AVATAR_BYTES) throw new Error("图片过大，请换更小的图");
   await prisma.user.update({ where: { id: userId }, data: { avatarUrl: dataUrl } });
+}
+
+const MAX_BANNER_BYTES = 2_600_000; // dataURL 上限（约 2MB 原始，GIF 不压缩保留动画）
+
+/** 设置/清除资料背景（好友悬停卡展示）。支持上传 dataURL 或图片/mp4/webm 直链。 */
+export async function updateProfileBanner(url: string): Promise<void> {
+  const userId = await getSessionUserId();
+  const clean = url.trim();
+  if (!clean) {
+    await prisma.user.update({ where: { id: userId }, data: { profileBannerUrl: null } });
+    return;
+  }
+  const isData = /^data:(image\/(png|jpeg|webp|gif)|video\/(mp4|webm));base64,/.test(clean);
+  const isHttp = /^https?:\/\/\S+$/.test(clean);
+  if (!isData && !isHttp) throw new Error("仅支持上传图片/GIF，或 http(s) 图片/mp4/webm 直链");
+  if (isData && clean.length > MAX_BANNER_BYTES) throw new Error("文件过大（上限约 2MB）");
+  if (isHttp && clean.length > 600) throw new Error("链接过长");
+  await prisma.user.update({ where: { id: userId }, data: { profileBannerUrl: clean } });
 }
 
 export interface UpdateProfileInput {

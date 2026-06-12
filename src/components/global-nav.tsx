@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, Coins, Heart, Menu, Plus, Search, Settings, Shield, X, Zap } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
+import { StoreMenuBar } from "@/components/store/store-menu-bar";
 import { cn } from "@/lib/cn";
 
 const navLinks = [
@@ -15,15 +16,41 @@ const navLinks = [
 
 interface GlobalNavProps {
   user: { name: string; avatarHue: number; avatarUrl: string | null; tokenBalance: string; gatewayTokens: number; credits: number; isAdmin?: boolean; unread?: number } | null;
+  wishCount?: number;
 }
 
-export function GlobalNav({ user }: GlobalNavProps) {
+export function GlobalNav({ user, wishCount = 0 }: GlobalNavProps) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [storeOpen, setStoreOpen] = useState(false);
+  const storeCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 路由变化时关闭移动菜单
+  // 悬停展开商店二级菜单；离开后留 200ms 容错，便于鼠标斜向移入菜单条
+  const openStoreMenu = useCallback(() => {
+    if (storeCloseTimer.current) clearTimeout(storeCloseTimer.current);
+    setStoreOpen(true);
+  }, []);
+  const closeStoreMenu = useCallback(() => {
+    if (storeCloseTimer.current) clearTimeout(storeCloseTimer.current);
+    storeCloseTimer.current = setTimeout(() => setStoreOpen(false), 200);
+  }, []);
+  useEffect(() => () => {
+    if (storeCloseTimer.current) clearTimeout(storeCloseTimer.current);
+  }, []);
+
+  // 键盘可达性：聚焦「商店」时展开（菜单 DOM 在导航末尾，Tab 穿过中间项时焦点仍在导航内、保持展开）；
+  // 焦点离开整个导航或按 Esc 时关闭
+  const onHeaderBlur = useCallback((e: React.FocusEvent<HTMLElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) closeStoreMenu();
+  }, [closeStoreMenu]);
+  const onHeaderKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Escape") setStoreOpen(false);
+  }, []);
+
+  // 路由变化时关闭移动菜单与商店二级菜单
   useEffect(() => {
     setMenuOpen(false);
+    setStoreOpen(false);
   }, [pathname]);
 
   const isActive = (href: string) =>
@@ -32,7 +59,7 @@ export function GlobalNav({ user }: GlobalNavProps) {
       : pathname.startsWith(href);
 
   return (
-    <header className="sticky top-0 z-50 px-3 pt-3">
+    <header className="sticky top-0 z-50 px-3 pt-3" onBlur={onHeaderBlur} onKeyDown={onHeaderKeyDown}>
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 rounded-2xl border border-line/60 bg-panel/70 px-4 shadow-[0_10px_34px_-14px_rgba(20,30,60,0.32)] backdrop-blur-xl supports-[backdrop-filter]:bg-panel/70 sm:gap-6 sm:px-6">
         {/* 移动端汉堡 */}
         <button
@@ -51,20 +78,30 @@ export function GlobalNav({ user }: GlobalNavProps) {
           <span className="text-[15px] font-bold">星港</span>
         </Link>
 
-        {/* 主导航 */}
+        {/* 主导航：「商店」悬停展开二级菜单（点击仍回商店首页） */}
         <nav className="hidden items-center gap-1 md:flex">
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                isActive(link.href) ? "bg-accent/8 text-accent" : "text-dim hover:bg-card-hi hover:text-ink",
-              )}
-            >
-              {link.label}
-            </Link>
-          ))}
+          {navLinks.map((link) => {
+            const isStore = link.href === "/";
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                onMouseEnter={isStore ? openStoreMenu : undefined}
+                onMouseLeave={isStore ? closeStoreMenu : undefined}
+                onFocus={isStore ? openStoreMenu : undefined}
+                aria-haspopup={isStore ? "menu" : undefined}
+                aria-expanded={isStore ? storeOpen : undefined}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                  isActive(link.href)
+                    ? "bg-accent/8 text-accent"
+                    : cn("text-dim hover:bg-card-hi hover:text-ink", isStore && storeOpen && "bg-card-hi text-ink"),
+                )}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
           {user && (
             <Link
               href="/developer"
@@ -172,6 +209,17 @@ export function GlobalNav({ user }: GlobalNavProps) {
           )}
         </div>
       </div>
+
+      {/* 商店二级菜单：悬停「商店」时出现在导航下方（绝对定位，不挤压页面） */}
+      {storeOpen && (
+        <div
+          className="absolute inset-x-0 top-full hidden px-3 pt-2 md:block"
+          onMouseEnter={openStoreMenu}
+          onMouseLeave={closeStoreMenu}
+        >
+          <StoreMenuBar wishCount={wishCount} />
+        </div>
+      )}
 
       {/* 移动端菜单 */}
       {menuOpen && (

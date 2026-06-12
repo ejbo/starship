@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { getSessionUserId, getSessionUserIdOrNull } from "@/lib/session";
 import { normalizeFriendCode } from "@/lib/tokens";
-import type { Friend, PresenceKind } from "@/lib/types";
+import type { AppIconArt, Friend, PresenceKind } from "@/lib/types";
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 const ACTIVITY_WINDOW_MS = 10 * 60 * 1000;
@@ -64,7 +64,7 @@ export async function setActivity(activity: string, slug?: string): Promise<void
   });
 }
 
-async function friendIdsOf(userId: string): Promise<string[]> {
+export async function friendIdsOf(userId: string): Promise<string[]> {
   const edges = await prisma.friendEdge.findMany({
     where: { status: "accepted", OR: [{ aId: userId }, { bId: userId }] },
     select: { aId: true, bId: true },
@@ -72,47 +72,110 @@ async function friendIdsOf(userId: string): Promise<string[]> {
   return edges.map((e) => (e.aId === userId ? e.bId : e.aId));
 }
 
-/** 当前用户的好友（含派生在线状态、备注、头像） */
+/** Friend 映射所需的 User 字段（group-service 复用） */
+export const friendUserSelect = {
+  id: true,
+  handle: true,
+  name: true,
+  avatarHue: true,
+  avatarUrl: true,
+  level: true,
+  badges: true,
+  profileBannerUrl: true,
+  lastSeenAt: true,
+  currentActivity: true,
+  currentActivitySlug: true,
+  activityAt: true,
+  presenceKind: true,
+  presenceDetail: true,
+} as const;
+
+type FriendUserRow = {
+  id: string;
+  handle: string;
+  name: string;
+  avatarHue: number;
+  avatarUrl: string | null;
+  level: number;
+  badges: unknown;
+  profileBannerUrl: string | null;
+  lastSeenAt: string | null;
+  currentActivity: string | null;
+  currentActivitySlug: string | null;
+  activityAt: string | null;
+  presenceKind: string;
+  presenceDetail: string | null;
+};
+
+export function toFriend(u: FriendUserRow, remark: string | null): Friend {
+  const badges = (u.badges as { label: string; icon: string }[]) ?? [];
+  return {
+    handle: u.handle,
+    name: u.name,
+    remark,
+    avatarHue: u.avatarHue,
+    avatarUrl: u.avatarUrl,
+    level: u.level,
+    lastSeenAt: u.lastSeenAt,
+    bannerUrl: u.profileBannerUrl,
+    badge: badges[0] ?? null,
+    presence: derivePresence(u),
+  };
+}
+
+/**
+ * 给「正在使用」的好友补应用小图标：优先按 slug 查产品，
+ * 种子兜底状态没有 slug 时按应用名匹配。原地修改 presence.appIcon / appSlug。
+ */
+export async function attachAppIcons(friends: Friend[]): Promise<void> {
+  const using = friends.filter((f) => f.presence.kind === "using" && f.presence.detail);
+  if (using.length === 0) return;
+  const slugs = [...new Set(using.map((f) => f.presence.appSlug).filter((s): s is string => !!s))];
+  const names = [...new Set(using.filter((f) => !f.presence.appSlug).map((f) => f.presence.detail!))];
+  const products = await prisma.product.findMany({
+    where: { OR: [{ slug: { in: slugs } }, ...names.map((n) => ({ name: { contains: n } }))] },
+    select: { slug: true, name: true, capsuleUrl: true, hueA: true, hueB: true, icon: true },
+  });
+  const art = (p: (typeof products)[number]): AppIconArt => ({ capsuleUrl: p.capsuleUrl, hueA: p.hueA, hueB: p.hueB, icon: p.icon });
+  const bySlug = new Map(products.map((p) => [p.slug, p]));
+  // 种子兜底状态只有应用名：放宽到「互相包含」（如 "银河阅读器" ↔ "银河阅读器 Galaxy Reader"）
+  const byName = (detail: string) => products.find((p) => p.name === detail || p.name.includes(detail) || detail.includes(p.name));
+  for (const f of using) {
+    const p = (f.presence.appSlug && bySlug.get(f.presence.appSlug)) || byName(f.presence.detail!);
+    if (p) {
+      f.presence.appIcon = art(p);
+      f.presence.appSlug ??= p.slug;
+    }
+  }
+}
+
+/** 当前用户的好友（含派生在线状态、备注、头像、应用图标） */
 export async function getFriendsWithPresence(): Promise<Friend[]> {
   const userId = await getSessionUserIdOrNull();
   if (!userId) return [];
   const ids = await friendIdsOf(userId);
   const [users, notes] = await Promise.all([
-    prisma.user.findMany({
-      where: { id: { in: ids } },
-      select: {
-        id: true,
-        handle: true,
-        name: true,
-        avatarHue: true,
-        avatarUrl: true,
-        level: true,
-        lastSeenAt: true,
-        currentActivity: true,
-        currentActivitySlug: true,
-        activityAt: true,
-        presenceKind: true,
-        presenceDetail: true,
-      },
-    }),
+    prisma.user.findMany({ where: { id: { in: ids } }, select: friendUserSelect }),
     prisma.friendNote.findMany({ where: { ownerUserId: userId, targetUserId: { in: ids } } }),
   ]);
   const remarkByTarget = new Map(notes.map((n) => [n.targetUserId, n.remark]));
-  return users
-    .map((u) => ({
-      handle: u.handle,
-      name: u.name,
-      remark: remarkByTarget.get(u.id) ?? null,
-      avatarHue: u.avatarHue,
-      avatarUrl: u.avatarUrl,
-      level: u.level,
-      presence: derivePresence(u),
-    }))
-    .sort((a, b) => rank(a.presence.kind) - rank(b.presence.kind));
+  const friends = users
+    .map((u) => toFriend(u, remarkByTarget.get(u.id) ?? null))
+    .sort(compareFriends);
+  await attachAppIcons(friends);
+  return friends;
 }
 
 function rank(kind: PresenceKind): number {
   return { using: 0, meeting: 1, online: 2, offline: 3 }[kind];
+}
+
+/** 状态优先；离线之间按最后在线时间新→旧（Steam 同款排序） */
+export function compareFriends(a: Friend, b: Friend): number {
+  const d = rank(a.presence.kind) - rank(b.presence.kind);
+  if (d !== 0) return d;
+  if (a.presence.kind === "offline") return (b.lastSeenAt ?? "").localeCompare(a.lastSeenAt ?? "");
+  return a.name.localeCompare(b.name);
 }
 
 export interface FriendWithUsage {
@@ -131,39 +194,22 @@ export async function getFriendsWithProduct(productId: string): Promise<FriendWi
     prisma.user.findMany({
       where: { id: { in: ids }, library: { some: { productId } } },
       select: {
-        id: true,
-        handle: true,
-        name: true,
-        avatarHue: true,
-        avatarUrl: true,
-        level: true,
-        lastSeenAt: true,
-        currentActivity: true,
-        currentActivitySlug: true,
-        activityAt: true,
-        presenceKind: true,
-        presenceDetail: true,
+        ...friendUserSelect,
         library: { where: { productId }, select: { usageMinutes: true, lastUsedAt: true } },
       },
     }),
     prisma.friendNote.findMany({ where: { ownerUserId: userId, targetUserId: { in: ids } } }),
   ]);
   const remarkByTarget = new Map(notes.map((n) => [n.targetUserId, n.remark]));
-  return users
+  const result = users
     .map((u) => ({
-      friend: {
-        handle: u.handle,
-        name: u.name,
-        remark: remarkByTarget.get(u.id) ?? null,
-        avatarHue: u.avatarHue,
-        avatarUrl: u.avatarUrl,
-        level: u.level,
-        presence: derivePresence(u),
-      },
+      friend: toFriend(u, remarkByTarget.get(u.id) ?? null),
       usageMinutes: u.library[0]?.usageMinutes ?? 0,
       lastUsedAt: u.library[0]?.lastUsedAt ?? null,
     }))
-    .sort((a, b) => rank(a.friend.presence.kind) - rank(b.friend.presence.kind));
+    .sort((a, b) => compareFriends(a.friend, b.friend));
+  await attachAppIcons(result.map((r) => r.friend));
+  return result;
 }
 
 export interface FriendRequestView {

@@ -1,13 +1,24 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { updateAvatar, updateProfile } from "@/lib/profile-service";
+import { updateAvatar, updateProfile, updateProfileBanner } from "@/lib/profile-service";
 
 export async function updateAvatarAction(dataUrl: string): Promise<{ ok: boolean; error?: string }> {
   try {
     await updateAvatar(dataUrl);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "上传失败" };
+  }
+  revalidatePath("/settings/profile");
+  revalidatePath("/u/me");
+  return { ok: true };
+}
+
+export async function updateBannerAction(url: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await updateProfileBanner(url);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "保存失败" };
   }
   revalidatePath("/settings/profile");
   revalidatePath("/u/me");
