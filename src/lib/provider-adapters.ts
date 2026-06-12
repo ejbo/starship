@@ -10,7 +10,7 @@ export interface AdapterResult {
 }
 
 export const defaultModel: Record<string, string> = {
-  anthropic: "claude-3-5-haiku-latest",
+  anthropic: "claude-sonnet-4-5",
   openai: "gpt-4o-mini",
   google: "gemini-1.5-flash",
   xai: "grok-2-latest",
