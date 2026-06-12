@@ -10,12 +10,14 @@ import { prisma } from "@/lib/db";
  * custom provider（baseURL=/api/v1/gateway/openai，apiKey=用户 OAuth 令牌）接入。平台据 model
  * 路由到上游、用平台 key 出账、按用量扣 gatewayTokens。鉴权：Bearer + scope gateway:llm。
  *
- * 说明：平台上游适配器目前支持 anthropic / openai；其余模型返回 400。
+ * 说明：平台上游适配器支持 Claude / GPT / Gemini / Grok；其余模型返回 400。
  */
-function providerForModel(model: string): "anthropic" | "openai" | null {
+function providerForModel(model: string): "anthropic" | "openai" | "google" | "xai" | null {
   const m = (model || "").toLowerCase();
   if (m.includes("claude")) return "anthropic";
-  if (m.startsWith("gpt") || m.startsWith("o1") || m.startsWith("o3") || m.startsWith("o4") || m.includes("gpt")) return "openai";
+  if (m.startsWith("gemini") || m.startsWith("gemma")) return "google";
+  if (m.startsWith("grok")) return "xai";
+  if (m.startsWith("gpt") || m.startsWith("o1") || m.startsWith("o3") || m.startsWith("o4") || m.startsWith("chatgpt")) return "openai";
   return null;
 }
 
@@ -55,7 +57,7 @@ export async function POST(req: Request) {
   }
   const model = body.model ?? "";
   const provider = providerForModel(model);
-  if (!provider) return oaError(400, `平台 Gateway 暂不支持模型 ${model}（当前支持 Claude / GPT 系列）`);
+  if (!provider) return oaError(400, `平台 Gateway 暂不支持模型 ${model}（当前支持 Claude / GPT / Gemini / Grok 系列）`);
   const prompt = flatten(body.messages ?? []);
   if (!prompt) return oaError(400, "messages 为空");
 

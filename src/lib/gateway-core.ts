@@ -11,7 +11,6 @@ const PLATFORM_KEY_ENV: Record<string, string> = {
   openai: "STARPORT_GW_OPENAI_KEY",
   google: "STARPORT_GW_GOOGLE_KEY",
   xai: "STARPORT_GW_XAI_KEY",
-  openrouter: "STARPORT_GW_OPENROUTER_KEY",
 };
 function platformKeyFor(provider: string): string | null {
   const v = process.env[PLATFORM_KEY_ENV[provider] ?? ""];
@@ -48,6 +47,8 @@ export interface GatewayChatResult {
 const PRICE_PER_1K: Record<string, { in: number; out: number }> = {
   anthropic: { in: 0.08, out: 0.4 },
   openai: { in: 0.015, out: 0.06 },
+  google: { in: 0.0125, out: 0.05 },
+  xai: { in: 0.03, out: 0.15 },
 };
 
 function today(): string {
@@ -79,7 +80,6 @@ export async function runGatewayChat(input: GatewayChatInput): Promise<GatewayCh
   let key: string;
   let last4: string;
   let usePlatform = false;
-  let tokenBudget = 0;
 
   if (cred) {
     if (cred.dailyTokenLimit != null) {
@@ -103,7 +103,6 @@ export async function runGatewayChat(input: GatewayChatInput): Promise<GatewayCh
     key = pk;
     last4 = "平台";
     usePlatform = true;
-    tokenBudget = me.gatewayTokens;
   }
 
   const model = input.model?.trim() || defaultModel[provider] || "default";
@@ -122,11 +121,18 @@ export async function runGatewayChat(input: GatewayChatInput): Promise<GatewayCh
     data: { userId, productSlug, provider, model: result.model, tokensIn: result.tokensIn, tokensOut: result.tokensOut, costCents, day: today() },
   });
 
-  // 平台出账：按本次用量扣预付 token（clamp，不为负）
+  // 平台出账：按本次用量扣预付 token。条件原子更新避免并发把余额扣成负数：
+  // 先尝试「余额≥spend 时减 spend」；不足则置 0（两步都是幂等/原子，跨请求并发安全）。
   if (usePlatform) {
-    const spend = Math.min(tokenBudget, result.tokensIn + result.tokensOut);
+    const spend = result.tokensIn + result.tokensOut;
     if (spend > 0) {
-      await prisma.user.update({ where: { id: userId }, data: { gatewayTokens: { decrement: spend } } });
+      const upd = await prisma.user.updateMany({
+        where: { id: userId, gatewayTokens: { gte: spend } },
+        data: { gatewayTokens: { decrement: spend } },
+      });
+      if (upd.count === 0) {
+        await prisma.user.update({ where: { id: userId }, data: { gatewayTokens: 0 } });
+      }
     }
   }
 

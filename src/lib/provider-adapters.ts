@@ -9,12 +9,12 @@ export interface AdapterResult {
   model: string;
 }
 
+// 默认模型（请求未显式带 model 时用；取各家便宜可用的一档，均已对账号实测可用 2026-06）
 export const defaultModel: Record<string, string> = {
-  anthropic: "claude-sonnet-4-5",
-  openai: "gpt-4o-mini",
-  google: "gemini-1.5-flash",
-  xai: "grok-2-latest",
-  openrouter: "anthropic/claude-3.5-haiku",
+  anthropic: "claude-haiku-4-5-20251001",
+  openai: "gpt-5-mini",
+  google: "gemini-2.5-flash",
+  xai: "grok-4.20-0309-non-reasoning",
 };
 
 const TIMEOUT_MS = 30_000;
@@ -37,7 +37,7 @@ export async function callAnthropic(key: string, model: string, prompt: string):
       },
       body: JSON.stringify({
         model,
-        max_tokens: 1024,
+        max_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
       }),
       signal,
@@ -56,10 +56,14 @@ export async function callAnthropic(key: string, model: string, prompt: string):
   }
 }
 
-export async function callOpenAI(key: string, model: string, prompt: string): Promise<AdapterResult> {
+/**
+ * OpenAI 兼容的 /chat/completions 通用调用：OpenAI、Gemini（v1beta/openai）、xAI 均走此格式。
+ * baseUrl 不含末尾斜杠，会自动拼 /chat/completions。
+ */
+async function callOpenAICompatible(baseUrl: string, key: string, model: string, prompt: string): Promise<AdapterResult> {
   const { signal, cancel } = withTimeout();
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
       body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }] }),
@@ -79,6 +83,20 @@ export async function callOpenAI(key: string, model: string, prompt: string): Pr
   }
 }
 
+export function callOpenAI(key: string, model: string, prompt: string): Promise<AdapterResult> {
+  return callOpenAICompatible("https://api.openai.com/v1", key, model, prompt);
+}
+
+/** Gemini：用 Google 的 OpenAI 兼容端点（实测返回 OpenAI 格式 + usage） */
+export function callGoogle(key: string, model: string, prompt: string): Promise<AdapterResult> {
+  return callOpenAICompatible("https://generativelanguage.googleapis.com/v1beta/openai", key, model, prompt);
+}
+
+/** xAI Grok：原生 OpenAI 兼容 */
+export function callXai(key: string, model: string, prompt: string): Promise<AdapterResult> {
+  return callOpenAICompatible("https://api.x.ai/v1", key, model, prompt);
+}
+
 /** provider → 适配器；未实现的 provider 抛错由上层降级 */
 export async function callProvider(provider: string, key: string, model: string, prompt: string): Promise<AdapterResult> {
   switch (provider) {
@@ -86,6 +104,10 @@ export async function callProvider(provider: string, key: string, model: string,
       return callAnthropic(key, model, prompt);
     case "openai":
       return callOpenAI(key, model, prompt);
+    case "google":
+      return callGoogle(key, model, prompt);
+    case "xai":
+      return callXai(key, model, prompt);
     default:
       throw new Error(`provider ${provider} 暂未接入真实调用`);
   }

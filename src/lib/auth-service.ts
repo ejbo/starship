@@ -35,6 +35,8 @@ export async function register(handle: string, name: string, password: string): 
       level: 1,
       signature: "新加入星港",
       tokenBalance: "0",
+      // 新船员赠送 Gateway token 额度，开箱即可在原生应用（如 MultiLLM）用平台调模型；用完在钱包用点数兑换
+      gatewayTokens: 50_000,
       badges: [{ label: "新船员", icon: "sparkles" }],
     },
   });
