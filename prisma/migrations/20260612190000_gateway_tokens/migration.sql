@@ -1,0 +1,2 @@
+-- AddColumn
+ALTER TABLE "User" ADD COLUMN "gatewayTokens" INTEGER NOT NULL DEFAULT 0;

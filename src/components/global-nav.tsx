@@ -14,7 +14,7 @@ const navLinks = [
 ] as const;
 
 interface GlobalNavProps {
-  user: { name: string; avatarHue: number; avatarUrl: string | null; tokenBalance: string; credits: number; isAdmin?: boolean; unread?: number } | null;
+  user: { name: string; avatarHue: number; avatarUrl: string | null; tokenBalance: string; gatewayTokens: number; credits: number; isAdmin?: boolean; unread?: number } | null;
 }
 
 export function GlobalNav({ user }: GlobalNavProps) {
@@ -119,14 +119,14 @@ export function GlobalNav({ user }: GlobalNavProps) {
                 <Plus className="size-3 opacity-60" />
               </Link>
 
-              {/* 用量额度 → 用量看板 */}
+              {/* Token 余额 → 钱包兑换 */}
               <Link
-                href="/settings/usage"
+                href="/wallet"
                 className="hidden items-center gap-1 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-dim transition-colors hover:border-accent/50 hover:text-ink lg:flex"
-                title="查看用量看板"
+                title="Token 余额 · 用点数兑换"
               >
                 <Zap className="size-3.5 text-warn" />
-                {user.tokenBalance} tokens
+                {user.gatewayTokens.toLocaleString("zh-CN")} tokens
               </Link>
 
               {/* 通知铃 */}

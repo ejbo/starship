@@ -200,6 +200,7 @@ export interface CurrentUserView {
   badges: { label: string; icon: string }[];
   showcase: string[];
   tokenBalance: string;
+  gatewayTokens: number;
   credits: number;
   library: { slug: string; acquiredAt: string; lastUsedAt?: string; usageHours: number; usageMinutes: number }[];
 }
@@ -224,6 +225,7 @@ export async function getCurrentUser(): Promise<CurrentUserView | null> {
     badges: (me.badges as { label: string; icon: string }[]) ?? [],
     showcase: me.showcase,
     tokenBalance: me.tokenBalance,
+    gatewayTokens: me.gatewayTokens,
     credits: me.credits,
     library: me.library
       .map((e) => ({

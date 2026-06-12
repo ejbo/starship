@@ -35,6 +35,8 @@ model User {
   tokenBalance String          @default("0")
   /// 平台点数余额（购买产品用；未来支付系统充值入口）
   credits      Int             @default(1000)
+  /// 平台 Gateway 预付 token 余额：用点数兑换，应用经平台 key 调模型时按用量扣减（multillm 等原生应用用）
+  gatewayTokens Int            @default(0)
   /// [{ label, icon }]
   badges       Json            @default("[]")
   /// 展柜精选的产品 slug

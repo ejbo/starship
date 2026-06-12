@@ -25,7 +25,7 @@ export default async function RootLayout({
     <html lang="zh-CN">
       <body className="antialiased">
         <GlobalNav
-          user={user ? { name: user.name, avatarHue: user.avatarHue, avatarUrl: user.avatarUrl, tokenBalance: user.tokenBalance, credits: user.credits, isAdmin: user.isAdmin, unread } : null}
+          user={user ? { name: user.name, avatarHue: user.avatarHue, avatarUrl: user.avatarUrl, tokenBalance: user.tokenBalance, gatewayTokens: user.gatewayTokens, credits: user.credits, isAdmin: user.isAdmin, unread } : null}
         />
         <div className="min-h-[70vh]">{children}</div>
         <SiteFooter />

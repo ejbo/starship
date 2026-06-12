@@ -5,6 +5,19 @@ import { callProvider, defaultModel } from "@/lib/provider-adapters";
 
 export type GatewayErrorCode = "no_credential" | "limit_exceeded" | "upstream";
 
+/** 平台自有上游 key（运营方在服务器 env 配置）：用户没配自有 key 时由平台出账、扣 token */
+const PLATFORM_KEY_ENV: Record<string, string> = {
+  anthropic: "STARPORT_GW_ANTHROPIC_KEY",
+  openai: "STARPORT_GW_OPENAI_KEY",
+  google: "STARPORT_GW_GOOGLE_KEY",
+  xai: "STARPORT_GW_XAI_KEY",
+  openrouter: "STARPORT_GW_OPENROUTER_KEY",
+};
+function platformKeyFor(provider: string): string | null {
+  const v = process.env[PLATFORM_KEY_ENV[provider] ?? ""];
+  return v && v.trim() ? v.trim() : null;
+}
+
 export class GatewayError extends Error {
   code: GatewayErrorCode;
   constructor(code: GatewayErrorCode, message: string) {
@@ -61,21 +74,39 @@ export async function runGatewayChat(input: GatewayChatInput): Promise<GatewayCh
     where: { userId, provider },
     select: { ciphertext: true, last4: true, dailyTokenLimit: true },
   });
-  if (!cred) throw new GatewayError("no_credential", `尚未配置 ${provider} 密钥`);
 
-  // 日限额强制
-  if (cred.dailyTokenLimit != null) {
-    const used = await todayTokens(userId, provider);
-    if (used >= cred.dailyTokenLimit) {
-      throw new GatewayError(
-        "limit_exceeded",
-        `已达 ${provider} 今日额度上限（${cred.dailyTokenLimit.toLocaleString("zh-CN")} tokens）`,
-      );
+  // 选路：优先用户自有 key（免费、按日限额）；没有则用平台 key + 扣预付 token（运营方卖 token）
+  let key: string;
+  let last4: string;
+  let usePlatform = false;
+  let tokenBudget = 0;
+
+  if (cred) {
+    if (cred.dailyTokenLimit != null) {
+      const used = await todayTokens(userId, provider);
+      if (used >= cred.dailyTokenLimit) {
+        throw new GatewayError(
+          "limit_exceeded",
+          `已达 ${provider} 今日额度上限（${cred.dailyTokenLimit.toLocaleString("zh-CN")} tokens）`,
+        );
+      }
     }
+    key = decryptSecret(cred.ciphertext);
+    last4 = cred.last4;
+  } else {
+    const pk = platformKeyFor(provider);
+    const me = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { gatewayTokens: true } });
+    if (!pk) throw new GatewayError("no_credential", `尚未配置 ${provider} 密钥`);
+    if (me.gatewayTokens <= 0) {
+      throw new GatewayError("limit_exceeded", `token 余额不足，请在钱包用点数兑换 token，或配置自有 ${provider} 密钥`);
+    }
+    key = pk;
+    last4 = "平台";
+    usePlatform = true;
+    tokenBudget = me.gatewayTokens;
   }
 
   const model = input.model?.trim() || defaultModel[provider] || "default";
-  const key = decryptSecret(cred.ciphertext);
 
   let result;
   try {
@@ -88,17 +119,16 @@ export async function runGatewayChat(input: GatewayChatInput): Promise<GatewayCh
   const price = PRICE_PER_1K[provider] ?? { in: 0, out: 0 };
   const costCents = Math.round((result.tokensIn / 1000) * price.in + (result.tokensOut / 1000) * price.out);
   await prisma.usageRecord.create({
-    data: {
-      userId,
-      productSlug,
-      provider,
-      model: result.model,
-      tokensIn: result.tokensIn,
-      tokensOut: result.tokensOut,
-      costCents,
-      day: today(),
-    },
+    data: { userId, productSlug, provider, model: result.model, tokensIn: result.tokensIn, tokensOut: result.tokensOut, costCents, day: today() },
   });
+
+  // 平台出账：按本次用量扣预付 token（clamp，不为负）
+  if (usePlatform) {
+    const spend = Math.min(tokenBudget, result.tokensIn + result.tokensOut);
+    if (spend > 0) {
+      await prisma.user.update({ where: { id: userId }, data: { gatewayTokens: { decrement: spend } } });
+    }
+  }
 
   return {
     text: result.text,
@@ -106,6 +136,6 @@ export async function runGatewayChat(input: GatewayChatInput): Promise<GatewayCh
     model: result.model,
     tokensIn: result.tokensIn,
     tokensOut: result.tokensOut,
-    last4: cred.last4,
+    last4,
   };
 }

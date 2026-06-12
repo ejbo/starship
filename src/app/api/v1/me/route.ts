@@ -10,10 +10,10 @@ export async function GET(req: Request) {
 
   const u = await prisma.user.findUnique({
     where: { id: token.userId },
-    select: { handle: true, name: true, avatarHue: true, level: true },
+    select: { handle: true, name: true, avatarHue: true, level: true, gatewayTokens: true },
   });
   if (!u) return jsonError(404, "not_found");
 
-  // 仅公开字段，绝不含邮箱/密钥
-  return NextResponse.json({ handle: u.handle, name: u.name, avatarHue: u.avatarHue, level: u.level });
+  // 仅公开字段 + 本人 token 余额（供应用展示/同步）；绝不含邮箱/密钥
+  return NextResponse.json({ handle: u.handle, name: u.name, avatarHue: u.avatarHue, level: u.level, gatewayTokens: u.gatewayTokens });
 }
