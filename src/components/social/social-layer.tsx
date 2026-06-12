@@ -297,6 +297,24 @@ export function SocialLayer({
     };
   }, []);
 
+  // 外部页面（如库详情页的「哪些好友在玩」）通过自定义事件触发：双击开聊天 / 右键菜单
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const d = (e as CustomEvent<{ handle?: string }>).detail;
+      if (d?.handle) void openChat(d.handle);
+    };
+    const onMenu = (e: Event) => {
+      const d = (e as CustomEvent<{ friend?: Friend; x?: number; y?: number }>).detail;
+      if (d?.friend) setMenu({ friend: d.friend, x: d.x ?? 0, y: d.y ?? 0 });
+    };
+    window.addEventListener("starport:open-chat", onOpen);
+    window.addEventListener("starport:friend-menu", onMenu);
+    return () => {
+      window.removeEventListener("starport:open-chat", onOpen);
+      window.removeEventListener("starport:friend-menu", onMenu);
+    };
+  }, [openChat]);
+
   // 关闭右键菜单
   useEffect(() => {
     if (!menu) return;

@@ -8,7 +8,7 @@ const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 const ACTIVITY_WINDOW_MS = 10 * 60 * 1000;
 
 /** 真实信号优先，回退到种子/兜底展示状态 */
-function derivePresence(u: {
+export function derivePresence(u: {
   lastSeenAt: string | null;
   currentActivity: string | null;
   currentActivitySlug: string | null;
@@ -113,6 +113,57 @@ export async function getFriendsWithPresence(): Promise<Friend[]> {
 
 function rank(kind: PresenceKind): number {
   return { using: 0, meeting: 1, online: 2, offline: 3 }[kind];
+}
+
+export interface FriendWithUsage {
+  friend: Friend;
+  usageMinutes: number;
+  lastUsedAt: string | null;
+}
+
+/** 拥有指定产品的好友（含该产品使用时长 + 派生在线状态）——库详情页「哪些好友在玩」。 */
+export async function getFriendsWithProduct(productId: string): Promise<FriendWithUsage[]> {
+  const userId = await getSessionUserIdOrNull();
+  if (!userId) return [];
+  const ids = await friendIdsOf(userId);
+  if (ids.length === 0) return [];
+  const [users, notes] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: ids }, library: { some: { productId } } },
+      select: {
+        id: true,
+        handle: true,
+        name: true,
+        avatarHue: true,
+        avatarUrl: true,
+        level: true,
+        lastSeenAt: true,
+        currentActivity: true,
+        currentActivitySlug: true,
+        activityAt: true,
+        presenceKind: true,
+        presenceDetail: true,
+        library: { where: { productId }, select: { usageMinutes: true, lastUsedAt: true } },
+      },
+    }),
+    prisma.friendNote.findMany({ where: { ownerUserId: userId, targetUserId: { in: ids } } }),
+  ]);
+  const remarkByTarget = new Map(notes.map((n) => [n.targetUserId, n.remark]));
+  return users
+    .map((u) => ({
+      friend: {
+        handle: u.handle,
+        name: u.name,
+        remark: remarkByTarget.get(u.id) ?? null,
+        avatarHue: u.avatarHue,
+        avatarUrl: u.avatarUrl,
+        level: u.level,
+        presence: derivePresence(u),
+      },
+      usageMinutes: u.library[0]?.usageMinutes ?? 0,
+      lastUsedAt: u.library[0]?.lastUsedAt ?? null,
+    }))
+    .sort((a, b) => rank(a.friend.presence.kind) - rank(b.friend.presence.kind));
 }
 
 export interface FriendRequestView {

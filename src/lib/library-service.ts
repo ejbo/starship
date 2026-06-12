@@ -76,6 +76,18 @@ export async function acquire(slug: string): Promise<void> {
   });
 }
 
+/** 当前用户对某产品的库条目（使用时长/最近使用/获取时间）——库详情页用 */
+export async function getMyLibraryStat(
+  productId: string,
+): Promise<{ usageMinutes: number; usageHours: number; lastUsedAt: string | null; acquiredAt: string } | null> {
+  const userId = await getSessionUserId();
+  const e = await prisma.libraryEntry.findUnique({
+    where: { userId_productId: { userId, productId } },
+    select: { usageMinutes: true, usageHours: true, lastUsedAt: true, acquiredAt: true },
+  });
+  return e ?? null;
+}
+
 /** 当前用户点数余额 */
 export async function getMyCredits(): Promise<number> {
   const userId = await getSessionUserId();

@@ -24,7 +24,8 @@ export interface LibItem {
   hasEntry: boolean;
 }
 
-const launchHref = (i: LibItem) => (i.hasEntry ? `/run/${i.slug}` : `/p/${i.slug}`);
+// 点击库里的应用 → 进入该应用的「库详情页」（Steam 式），而不是直接跳运行/商店页
+const launchHref = (i: LibItem) => `/library/${i.slug}`;
 
 type Sort = "recent" | "playtime" | "name";
 const sorts: { key: Sort; label: string }[] = [
@@ -103,7 +104,7 @@ export function LibraryView({ items }: { items: LibItem[] }) {
           <section>
             <h2 className="mb-3 text-sm font-semibold text-dim">最近游玩</h2>
             <div className="capsule grid overflow-hidden md:grid-cols-[1.6fr_1fr]">
-              <Link href={`/p/${hero.slug}`} className="relative min-h-44">
+              <Link href={`/library/${hero.slug}`} className="relative min-h-44">
                 <CapsuleArt art={hero.art} ratio="banner" className="h-full w-full" iconClassName="max-h-20" />
               </Link>
               <div className="flex flex-col justify-center gap-3 border-t border-line p-5 md:border-t-0 md:border-l">
