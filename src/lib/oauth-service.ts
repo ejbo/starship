@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
 import { generateAccessToken, generateAuthCode } from "@/lib/tokens";
 
-export const ALL_SCOPES = ["identity", "achievements:write", "stats:write", "presence:update", "gateway:llm", "keys:read"] as const;
+export const ALL_SCOPES = ["identity", "achievements:write", "stats:write", "presence:update", "gateway:llm", "keys:read", "social:read"] as const;
 export type Scope = (typeof ALL_SCOPES)[number];
 
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -61,10 +61,12 @@ export async function exchangeCodeForToken(
   if (grant.codeExpiresAt && Date.parse(grant.codeExpiresAt) < Date.now()) throw new Error("invalid_grant");
 
   const accessToken = generateAccessToken();
-  await prisma.oAuthGrant.update({
-    where: { id: grant.id },
+  // 原子 CAS：把 code 作为更新条件，谁先把它置空谁就赢，杜绝并发重复兑换（TOCTOU）。
+  const res = await prisma.oAuthGrant.updateMany({
+    where: { id: grant.id, code },
     data: { accessToken, code: null, codeExpiresAt: null },
   });
+  if (res.count !== 1) throw new Error("invalid_grant");
   return { accessToken, scopes: grant.scopes };
 }
 

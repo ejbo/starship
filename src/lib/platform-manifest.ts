@@ -14,6 +14,7 @@ export const SCOPES: Record<string, string> = {
   "presence:update": "更新用户「正在使用该应用」的实时状态并累计使用时长",
   "gateway:llm": "用用户在平台配置的密钥经 Gateway 调用大模型（应用拿不到明文 Key）",
   "keys:read": "⚠️ 导出用户在平台配置的 API 密钥【明文】供应用一键导入（密钥离开平台；面向自带 provider 的应用）",
+  "social:read": "读取用户好友列表 + 在线状态 + 未读数（应用内悬浮好友面板）",
 };
 
 export interface EndpointParam {
@@ -134,6 +135,16 @@ export const ENDPOINTS: Endpoint[] = [
     scope: "keys:read",
     params: [],
     responseExample: { keys: [{ provider: "anthropic", label: "默认", last4: "ab12", secret: "sk-ant-..." }] },
+  },
+  {
+    id: "friends.list",
+    method: "GET",
+    path: "/api/v1/friends",
+    summary: "读取用户好友 + 在线状态 + 每位好友未读私聊数（应用内悬浮好友面板）",
+    auth: "bearer",
+    scope: "social:read",
+    params: [],
+    responseExample: { friends: [{ handle: "ada", name: "Ada", avatarHue: 200, avatarUrl: null, presence: { kind: "using", detail: "MultiLLM Chat", appSlug: "multillm-chat" }, unread: 2 }] },
   },
   {
     id: "stats.global",

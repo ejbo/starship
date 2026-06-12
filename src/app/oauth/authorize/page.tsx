@@ -15,6 +15,7 @@ const scopeLabels: Record<string, string> = {
   "presence:update": "显示你「正在使用该应用」并累计使用时长",
   "gateway:llm": "用你在平台配置的密钥经 Gateway 调用大模型",
   "keys:read": "⚠️ 导入你在星港配置的 API 密钥到该应用（密钥将离开平台、明文交给该应用）",
+  "social:read": "读取你的好友列表与在线状态（应用内悬浮好友面板）",
 };
 
 export default async function AuthorizePage({
