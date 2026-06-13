@@ -111,7 +111,19 @@ export async function runGatewayChat(input: GatewayChatInput): Promise<GatewayCh
   try {
     result = await callProvider(provider, key, model, prompt);
   } catch (e) {
-    throw new GatewayError("upstream", e instanceof Error ? e.message : "上游调用失败");
+    const msg = e instanceof Error ? e.message : "上游调用失败";
+    // 上游说该模型不存在/无权限 → 退回该 provider 实测可用的默认模型，保证有回复（不让整条对话直接失败）
+    const fb = defaultModel[provider];
+    const modelMissing = /not[\s_-]?found|does not exist|do not have access|no such model|unsupported.*model|invalid.*model|未找到|不存在|无权限/i.test(msg);
+    if (fb && model !== fb && modelMissing) {
+      try {
+        result = await callProvider(provider, key, fb, prompt);
+      } catch (e2) {
+        throw new GatewayError("upstream", e2 instanceof Error ? e2.message : "上游调用失败");
+      }
+    } else {
+      throw new GatewayError("upstream", msg);
+    }
   }
 
   // 记真实用量
