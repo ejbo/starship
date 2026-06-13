@@ -469,6 +469,8 @@ export function ChatWindow(props: ChatWindowProps) {
               autoGrow();
             }}
             onKeyDown={(e) => {
+              // 中文等输入法选词时的 Enter 用于上屏候选，不能当作发送（否则会重复发送/发出拼音）
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
               if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
                 if (mentionCandidates.length > 0) {
                   e.preventDefault();

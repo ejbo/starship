@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { Copy, Link2, Trash2, Upload } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
+import { copyText } from "@/lib/clipboard";
 import { updateAvatarAction, updateBannerAction, updateProfileAction } from "@/app/settings/profile/actions";
 
 interface ProfileFormProps {
@@ -167,10 +168,11 @@ export function ProfileForm({ handle, friendCode, name, signature, avatarHue, av
               {friendCode && (
                 <button
                   type="button"
-                  onClick={() => {
-                    navigator.clipboard?.writeText(friendCode);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1200);
+                  onClick={async () => {
+                    if (await copyText(friendCode)) {
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 1200);
+                    }
                   }}
                   className="text-mute transition-colors hover:text-accent"
                   aria-label="复制好友码"

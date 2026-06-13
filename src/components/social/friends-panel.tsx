@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Bot, Check, ChevronDown, Copy, Plus, Search, UserPlus, X } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { getProductIcon } from "@/lib/icons";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 import type { FriendRequestView } from "@/lib/friends-service";
 import type { GroupMember, GroupSummary } from "@/lib/group-service";
@@ -399,10 +400,11 @@ export function AddFriendView({
             <div className="mt-1 flex items-center gap-2">
               <code className="grow font-mono text-sm font-semibold text-accent">{myCode}</code>
               <button
-                onClick={() => {
-                  navigator.clipboard?.writeText(myCode);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1200);
+                onClick={async () => {
+                  if (await copyText(myCode)) {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1200);
+                  }
                 }}
                 className="text-mute transition-colors hover:text-accent"
                 aria-label="复制好友码"

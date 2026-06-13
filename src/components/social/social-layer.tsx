@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, Copy, MessageSquare, Store, Terminal, Trash2, UserMinus, Users } from "lucide-react";
-import { deleteAgentAction, resetAgentTokenAction, updateAgentPersonaAction, type ConnectorCommand } from "@/app/agents-actions";
+import { Bot, Copy, KeyRound, MessageSquare, Store, Terminal, Trash2, UserMinus, Users } from "lucide-react";
+import { deleteAgentAction, getAgentCommandAction, resetAgentTokenAction, updateAgentPersonaAction, type ConnectorCommand } from "@/app/agents-actions";
 import {
   acceptRequestAction,
   addFriendAction,
@@ -49,7 +49,7 @@ type ModalState =
   | { mode: "create"; preselect: string[] }
   | { mode: "invite"; groupId: string }
   | { mode: "agent-create" }
-  | { mode: "agent-command"; command: ConnectorCommand }
+  | { mode: "agent-command"; command: ConnectorCommand; title?: string }
   | { mode: "agent-persona"; friend: Friend };
 
 const preview = (kind: string, body: string, attachmentName?: string | null) =>
@@ -695,7 +695,7 @@ export function SocialLayer({
       {modal?.mode === "agent-create" && (
         <AgentModal onClose={() => setModal(null)} onCreated={refresh} onOpenChat={openChat} />
       )}
-      {modal?.mode === "agent-command" && <ConnectorCommandModal command={modal.command} onClose={() => setModal(null)} />}
+      {modal?.mode === "agent-command" && <ConnectorCommandModal command={modal.command} title={modal.title} onClose={() => setModal(null)} />}
       {modal?.mode === "agent-persona" && (
         <PersonaModal
           name={modal.friend.name}
@@ -729,11 +729,23 @@ export function SocialLayer({
               await refresh();
             }
           }}
-          onAgentCommand={async () => {
+          onAgentGetCommand={async () => {
             const f = menu.friend;
-            if (!window.confirm(`重置「${f.name}」的连接令牌并生成新命令？（旧令牌会立即失效）`)) return;
+            const res = await getAgentCommandAction(f.handle);
+            if (res.ok && res.command) {
+              setModal({ mode: "agent-command", command: res.command, title: `${f.name} · 连接 / 重启命令` });
+            } else if (res.needsReset) {
+              if (window.confirm(`${res.error}。现在重置令牌并生成命令？（旧令牌会失效）`)) {
+                const r = await resetAgentTokenAction(f.handle, f.agentKind ?? "local-claude");
+                if (r.ok && r.command) setModal({ mode: "agent-command", command: r.command, title: `${f.name} · 连接 / 重启命令` });
+              }
+            }
+          }}
+          onAgentReset={async () => {
+            const f = menu.friend;
+            if (!window.confirm(`重置「${f.name}」的连接令牌？旧令牌（含正在运行的连接器）会立即失效，需用新命令重连。`)) return;
             const res = await resetAgentTokenAction(f.handle, f.agentKind ?? "local-claude");
-            if (res.ok && res.command) setModal({ mode: "agent-command", command: res.command });
+            if (res.ok && res.command) setModal({ mode: "agent-command", command: res.command, title: `${f.name} · 令牌已重置` });
           }}
           onAgentPersona={() => setModal({ mode: "agent-persona", friend: menu.friend })}
           onAgentDelete={async () => {
@@ -757,7 +769,8 @@ function FriendContextMenu({
   onInviteToGroup,
   onRemark,
   onRemove,
-  onAgentCommand,
+  onAgentGetCommand,
+  onAgentReset,
   onAgentPersona,
   onAgentDelete,
 }: {
@@ -767,7 +780,8 @@ function FriendContextMenu({
   onInviteToGroup: () => void;
   onRemark: () => void;
   onRemove: () => void;
-  onAgentCommand: () => void;
+  onAgentGetCommand: () => void;
+  onAgentReset: () => void;
   onAgentPersona: () => void;
   onAgentDelete: () => void;
 }) {
@@ -778,7 +792,10 @@ function FriendContextMenu({
         { label: "邀请到群组聊天", icon: Users, run: onInviteToGroup },
         { label: "编辑人设", icon: Bot, run: onAgentPersona },
         ...(state.friend.agentKind !== "hosted"
-          ? [{ label: "连接命令（重置令牌）", icon: Terminal, run: onAgentCommand }]
+          ? [
+              { label: "连接 / 重启命令", icon: Terminal, run: onAgentGetCommand },
+              { label: "重置连接令牌", icon: KeyRound, run: onAgentReset },
+            ]
           : []),
         { label: "删除 Agent", icon: Trash2, run: onAgentDelete, danger: true },
       ]

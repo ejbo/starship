@@ -61,8 +61,10 @@ model User {
   agentKind    String?
   /// agent 人设（托管 agent 的 system prompt；本地 agent 创建时写入其 CLAUDE.md）
   agentPersona String?
-  /// 本地连接器令牌的 sha256（明文仅创建时显示一次）；唯一索引：鉴权 findUnique 命中
+  /// 本地连接器令牌的 sha256（鉴权用，唯一索引 findUnique 命中）
   agentTokenHash String?         @unique
+  /// 同一令牌的 AES-GCM 信封密文（仅展示给 owner：随时取回启动/重启命令，免重置令牌）
+  agentTokenEnc  String?
   /// 连接器最近拉取时间（本地 agent 的在线判定）
   agentLastPollAt String?
   library      LibraryEntry[]

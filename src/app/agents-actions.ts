@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import {
   createAgent,
   deleteAgent,
+  getAgentToken,
   resetAgentToken,
   updateAgentPersona,
   type AgentKind,
@@ -18,16 +19,42 @@ async function origin(): Promise<string> {
   return `${proto}://${host}`;
 }
 
+/** 一个 agent 的全套连接命令（启动/重启/停止，前台与后台两种）。命令均带 --dir 固定工作目录，与 cwd 无关。 */
 export interface ConnectorCommand {
+  handle: string;
+  /** local-claude | local-codex */
+  agentKind: string;
+  /** 下载连接器到固定路径（~ 由 shell 展开，与 cwd 无关） */
   download: string;
-  run: string;
+  /** 前台运行（关终端即离线） */
+  foreground: string;
+  /** 后台常驻（pm2，关终端/重启电脑都不掉线），多行 */
+  daemon: string;
+  /** 前台重启（同 foreground，再跑一次） */
+  restartForeground: string;
+  /** 后台重启 / 停止（pm2） */
+  restartDaemon: string;
+  stopDaemon: string;
+  /** 开机自启（一次性） */
+  bootPersist: string;
 }
 
-function commandsFor(token: string, backend: string, base: string): ConnectorCommand {
-  const backendFlag = backend === "local-codex" ? " --backend codex" : "";
+function commandsFor(token: string, agentKind: string, base: string, handle: string): ConnectorCommand {
+  const backendFlag = agentKind === "local-codex" ? " --backend codex" : "";
+  const dir = `~/starport-agents/${handle}`;
+  const script = "~/starport-agent.mjs";
+  const pm = `agent-${handle}`;
+  const args = `--url ${base} --token ${token} --dir ${dir}${backendFlag}`;
   return {
-    download: `curl -fsSL ${base}/api/agent-connector -o starport-agent.mjs`,
-    run: `node starport-agent.mjs --url ${base} --token ${token}${backendFlag}`,
+    handle,
+    agentKind,
+    download: `curl -fsSL ${base}/api/agent-connector -o ${script}`,
+    foreground: `node ${script} ${args}`,
+    daemon: [`npm i -g pm2`, `pm2 start node --name ${pm} -- ${script} ${args}`, `pm2 save`].join("\n"),
+    restartForeground: `node ${script} ${args}`,
+    restartDaemon: `pm2 restart ${pm}`,
+    stopDaemon: `pm2 stop ${pm}`,
+    bootPersist: `pm2 startup`,
   };
 }
 
@@ -44,7 +71,7 @@ export async function createAgentAction(input: { name: string; agentKind: AgentK
     return {
       ok: true,
       agent,
-      command: agent.token ? commandsFor(agent.token, agent.agentKind, await origin()) : undefined,
+      command: agent.token ? commandsFor(agent.token, agent.agentKind, await origin(), agent.handle) : undefined,
     };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "创建失败" };
@@ -60,11 +87,23 @@ export async function deleteAgentAction(handle: string): Promise<{ ok: boolean; 
   }
 }
 
+/** 随时取回该 agent 的连接/重启命令（不重置令牌）。历史 agent 无密文时提示需重置。 */
+export async function getAgentCommandAction(handle: string): Promise<{ ok: boolean; command?: ConnectorCommand; needsReset?: boolean; error?: string }> {
+  try {
+    const { token, agentKind } = await getAgentToken(handle);
+    return { ok: true, command: commandsFor(token, agentKind, await origin(), handle) };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "获取失败";
+    if (msg === "__needs_reset__") return { ok: false, needsReset: true, error: "该 Agent 的令牌较早创建，需重置一次才能取回命令" };
+    return { ok: false, error: msg };
+  }
+}
+
 /** 重置令牌并返回新的连接命令（旧令牌即刻失效） */
 export async function resetAgentTokenAction(handle: string, agentKind: string): Promise<{ ok: boolean; command?: ConnectorCommand; error?: string }> {
   try {
     const token = await resetAgentToken(handle);
-    return { ok: true, command: commandsFor(token, agentKind, await origin()) };
+    return { ok: true, command: commandsFor(token, agentKind, await origin(), handle) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "重置失败" };
   }

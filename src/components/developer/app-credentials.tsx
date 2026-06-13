@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Copy, Eye, KeyRound, RefreshCw } from "lucide-react";
 import { regenerateSecretAction } from "@/app/developer/actions";
+import { copyText } from "@/lib/clipboard";
 
 export function AppCredentials({ id, clientId, freshSecret }: { id: string; clientId: string; freshSecret?: string }) {
   const [secret, setSecret] = useState<string | null>(freshSecret ?? null);
@@ -57,10 +58,11 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
         </code>
         {mono && (
           <button
-            onClick={() => {
-              navigator.clipboard?.writeText(value);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1200);
+            onClick={async () => {
+              if (await copyText(value)) {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1200);
+              }
             }}
             className="shrink-0 text-mute transition-colors hover:text-accent"
             aria-label="复制"

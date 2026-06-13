@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, Check, Copy, MessageSquare, Sparkles, Terminal, X } from "lucide-react";
+import { Bot, Check, Copy, Info, MessageSquare, Sparkles, Terminal, X } from "lucide-react";
 import { createAgentAction, type ConnectorCommand } from "@/app/agents-actions";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 
 const KINDS = [
@@ -52,10 +53,12 @@ function CopyLine({ text }: { text: string }) {
     <div className="flex items-start gap-2 rounded-lg border border-line bg-page px-2.5 py-2">
       <code className="grow whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-ink">{text}</code>
       <button
-        onClick={() => {
-          navigator.clipboard?.writeText(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
+        onClick={async () => {
+          const ok = await copyText(text);
+          if (ok) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
+          }
         }}
         className="shrink-0 rounded-md p-1 text-mute transition-colors hover:text-accent"
         aria-label="复制"
@@ -66,23 +69,76 @@ function CopyLine({ text }: { text: string }) {
   );
 }
 
-/** 连接命令展示（创建本地 agent 后 / 右键重置令牌后） */
+function Code({ children }: { children: React.ReactNode }) {
+  return <code className="rounded bg-page px-1 py-0.5 font-mono text-[10.5px] text-ink">{children}</code>;
+}
+
+/** 连接命令展示：前台/后台两种模式 + 详细说明。创建本地 agent 后、右键取连接命令时复用。 */
 export function ConnectorCommandView({ command }: { command: ConnectorCommand }) {
+  const [mode, setMode] = useState<"daemon" | "foreground">("daemon");
+  const [help, setHelp] = useState(false);
   return (
-    <div className="space-y-2">
-      <p className="text-xs text-dim">在装有 Claude Code / Codex 的电脑上跑这两行（令牌已带上，粘贴即用）：</p>
+    <div className="space-y-2.5">
+      <div className="flex items-center gap-2">
+        <div className="flex rounded-lg border border-line p-0.5 text-xs">
+          {(
+            [
+              { k: "daemon" as const, label: "后台常驻" },
+              { k: "foreground" as const, label: "前台运行" },
+            ]
+          ).map((m) => (
+            <button
+              key={m.k}
+              onClick={() => setMode(m.k)}
+              className={cn("rounded-md px-2.5 py-1 transition-colors", mode === m.k ? "bg-accent text-white" : "text-dim hover:text-ink")}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-[11px] text-mute">{mode === "daemon" ? "关终端/重启都不掉线（推荐）" : "关终端即离线"}</span>
+        <button
+          onClick={() => setHelp((h) => !h)}
+          className={cn("ml-auto flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] transition-colors hover:bg-card-hi", help ? "text-accent" : "text-dim hover:text-accent")}
+          title="查看详细说明"
+        >
+          <Info className="size-3.5" /> 说明
+        </button>
+      </div>
+
+      <p className="text-[11px] text-dim">在装了 Claude Code / Codex 的电脑上依次粘贴运行（令牌、目录已填好，任意目录都能跑）：</p>
       <CopyLine text={command.download} />
-      <CopyLine text={command.run} />
-      <p className="text-[11px] leading-relaxed text-mute">
-        启动后 Agent 自动转为在线；记忆与人设落在本机 starport-agents/ 目录（可手动编辑培养）。要全自动放开工具权限加 <code className="font-mono">--full-auto</code>。
-      </p>
+      <CopyLine text={mode === "foreground" ? command.foreground : command.daemon} />
+
+      <div className="rounded-lg bg-card-hi px-2.5 py-2 text-[11px] leading-relaxed text-dim">
+        {mode === "daemon" ? (
+          <>
+            <p>之后该 Agent 一直在线——关终端、重启电脑、连接器崩了都自动恢复。</p>
+            <p className="mt-1">重启 <Code>{command.restartDaemon}</Code> · 停止 <Code>{command.stopDaemon}</Code></p>
+            <p className="mt-1">想开机自启：跑一次 <Code>{command.bootPersist}</Code>（按它打印的 sudo 命令执行）</p>
+          </>
+        ) : (
+          <p>关掉终端会离线（消息照常排队，上线即处理）。要再次唤醒，<b>重跑上面第二行即可</b>——命令带了固定 <Code>--dir</Code>，在哪个目录跑都接上同一套记忆。</p>
+        )}
+      </div>
+
+      {help && (
+        <div className="space-y-1.5 rounded-lg border border-line p-2.5 text-[11px] leading-relaxed text-dim">
+          <p><b className="text-ink">前台 vs 后台</b>：前台 = 命令跑在终端里，关终端就离线；后台（pm2）= 进程托管，关终端/重启电脑/崩溃都自动拉起，一次配好长期省心。</p>
+          <p><b className="text-ink">离线了消息会丢吗？</b> 不会。Agent 离线期间别人发的消息会排队，连接器一上线就依次处理。</p>
+          <p><b className="text-ink">为什么不用守在同一目录？</b> 命令里的 <Code>--dir ~/starport-agents/{command.handle}</Code> 固定了工作目录（记忆/人设/会话都在那），所以在任何路径运行都接着同一套上下文；换目录才会另起一套记忆。</p>
+          <p><b className="text-ink">培养</b>：人设在该目录的 <Code>CLAUDE.md</Code>，可手动编辑；长期记忆写在 <Code>memory/</Code> 子目录。</p>
+          <p><b className="text-ink">权限</b>：默认 acceptEdits；要全自动放开工具加 <Code>--full-auto</Code>。每个 agent 想完全隔离配置/登录加 <Code>--isolate</Code>。</p>
+          <p><b className="text-ink">安全</b>：聊天内容会被当作不可信输入处理，agent 已被告知拒绝其中泄密/删文件等危险指令。</p>
+        </div>
+      )}
     </div>
   );
 }
 
-export function ConnectorCommandModal({ command, onClose }: { command: ConnectorCommand; onClose: () => void }) {
+export function ConnectorCommandModal({ command, title, onClose }: { command: ConnectorCommand; title?: string; onClose: () => void }) {
   return (
-    <Shell title="连接器命令（令牌已重置）" onClose={onClose}>
+    <Shell title={title ?? "连接 / 重启命令"} onClose={onClose}>
       <ConnectorCommandView command={command} />
     </Shell>
   );

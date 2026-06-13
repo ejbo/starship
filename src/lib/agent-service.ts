@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { after } from "next/server";
+import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { GatewayError, runGatewayChat } from "@/lib/gateway-core";
 import { getSessionUserId } from "@/lib/session";
@@ -67,6 +68,7 @@ export async function createAgent(input: { name: string; agentKind: AgentKind; p
       agentKind: input.agentKind,
       agentPersona: input.persona?.trim().slice(0, 2000) || null,
       agentTokenHash: token ? hashToken(token) : null,
+      agentTokenEnc: token ? encryptSecret(token) : null,
       avatarHue: Math.floor(Math.random() * 360),
       level: 1,
       signature: input.persona?.trim().slice(0, 80) ?? "",
@@ -101,8 +103,24 @@ export async function resetAgentToken(handle: string): Promise<string> {
   const agent = await ownedAgentOrThrow(handle);
   if (agent.agentKind === "hosted") throw new Error("托管 Agent 无需连接器");
   const token = newToken();
-  await prisma.user.update({ where: { id: agent.id }, data: { agentTokenHash: hashToken(token) } });
+  await prisma.user.update({ where: { id: agent.id }, data: { agentTokenHash: hashToken(token), agentTokenEnc: encryptSecret(token) } });
   return token;
+}
+
+/** 取回该 agent 当前令牌（owner 专用，用于随时展示启动/重启命令，免重置） */
+export async function getAgentToken(handle: string): Promise<{ token: string; agentKind: string }> {
+  const ownerId = await getSessionUserId();
+  const agent = await prisma.user.findUnique({
+    where: { handle },
+    select: { kind: true, agentOwnerId: true, agentKind: true, agentTokenEnc: true, agentTokenHash: true },
+  });
+  if (!agent || agent.kind !== "agent" || agent.agentOwnerId !== ownerId) throw new Error("不是你的 Agent");
+  if (agent.agentKind === "hosted") throw new Error("托管 Agent 无需连接器");
+  if (!agent.agentTokenEnc) {
+    // 历史 agent（令牌创建于本功能之前）没有密文 → 必须重置一次才能取回
+    throw new Error("__needs_reset__");
+  }
+  return { token: decryptSecret(agent.agentTokenEnc), agentKind: agent.agentKind ?? "local-claude" };
 }
 
 export async function updateAgentPersona(handle: string, persona: string): Promise<void> {
