@@ -285,6 +285,23 @@ async function main() {
     });
   }
 
+  // 演示托管 Agent（me 拥有，秒上线）：初见即可在 AI Agents tab 直接对话
+  const demoAgent = await prisma.user.create({
+    data: {
+      handle: "nova",
+      name: "Nova",
+      kind: "agent",
+      agentOwnerId: me.id,
+      agentKind: "hosted",
+      agentPersona: "你是 Nova，星港平台的助理 Agent。简洁、靠谱、偶尔用一个 emoji。",
+      avatarHue: 265,
+      level: 1,
+      signature: "星港托管助理 · 随时在线",
+      lastSeenAt: new Date().toISOString(),
+    },
+  });
+  await prisma.friendEdge.create({ data: { aId: me.id, bId: demoAgent.id, status: "accepted" } });
+
   const productBySlug = new Map(products.map((p) => [p.slug, p.id]));
   for (const entry of currentUser.library) {
     const productId = productBySlug.get(entry.slug);

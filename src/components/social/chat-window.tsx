@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Bell,
   BellOff,
+  Bot,
   ChevronsRight,
   Download,
   FileText,
@@ -22,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
+import { Markdown } from "@/components/ui/markdown";
 import { createChannelAction, leaveGroupAction, renameGroupAction } from "@/app/friends-actions";
 import { cn } from "@/lib/cn";
 import type { GroupMember, GroupSummary } from "@/lib/group-service";
@@ -364,6 +366,26 @@ export function ChatWindow(props: ChatWindowProps) {
   const grouped = groupByDayAndSender(messages, marker);
   const cornerCls = "absolute z-10 size-3.5";
 
+  // —— 群聊 @ 自动补全（输入 @ 弹出成员候选，agents 优先；Enter/Tab/点击插入） ——
+  const mentionMatch = activeGroup ? /@([^\s@]*)$/.exec(draft) : null;
+  const mentionCandidates =
+    mentionMatch && activeGroup
+      ? activeGroup.members
+          .filter((m) => !m.isMe)
+          .filter((m) => {
+            const q = mentionMatch[1].toLowerCase();
+            if (q === m.handle.toLowerCase() || mentionMatch[1] === m.name) return false; // 已输完整名则不打扰发送
+            return !q || m.handle.toLowerCase().startsWith(q) || m.name.toLowerCase().includes(q) || display(m).toLowerCase().includes(q);
+          })
+          .sort((a, b) => Number(b.isAgent ?? false) - Number(a.isAgent ?? false))
+          .slice(0, 6)
+      : [];
+  const insertMention = (handle: string) => {
+    if (!mentionMatch) return;
+    setDraft(draft.slice(0, mentionMatch.index) + `@${handle} `);
+    taRef.current?.focus();
+  };
+
   const placeholder = activeFriend ? `发消息给 ${display(activeFriend)}` : activeGroup ? `发消息到 #${activeGroup.channels.find((c) => c.id === activeChannelId)?.name ?? ""}` : "";
 
   const messageArea = (
@@ -386,7 +408,7 @@ export function ChatWindow(props: ChatWindowProps) {
                 )}
                 <div className="flex gap-2">
                   <span {...(g.sender.handle !== me.handle ? miniProfileProps(profileOf(g.sender)) : {})}>
-                    <Avatar name={nameOf(g.sender)} hue={g.sender.avatarHue} src={g.sender.avatarUrl} size="sm" className="mt-0.5" />
+                    <Avatar name={nameOf(g.sender)} hue={g.sender.avatarHue} src={g.sender.avatarUrl} size="sm" isAgent={g.sender.isAgent} className="mt-0.5" />
                   </span>
                   <div className="min-w-0">
                     <p className="flex items-baseline gap-1.5 leading-none">
@@ -420,6 +442,22 @@ export function ChatWindow(props: ChatWindowProps) {
         </div>
       )}
       {hint && <p className="absolute -top-7 left-2 rounded-md bg-ink/80 px-2 py-1 text-[11px] text-white">{hint}</p>}
+      {mentionCandidates.length > 0 && (
+        <div className="absolute bottom-full left-2 z-10 mb-1 w-60 overflow-hidden rounded-xl border border-line bg-panel py-1 shadow-[0_12px_40px_-12px_rgb(28_36_51/.3)]">
+          {mentionCandidates.map((m, i) => (
+            <button
+              key={m.handle}
+              onClick={() => insertMention(m.handle)}
+              className={cn("flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-card-hi", i === 0 && "bg-card-hi/60")}
+            >
+              <Avatar name={display(m)} hue={m.avatarHue} src={m.avatarUrl} size="xs" />
+              <span className="min-w-0 truncate text-sm">{m.name}</span>
+              {m.isAgent && <Bot className="size-3 shrink-0 text-green" />}
+              <span className="ml-auto shrink-0 text-[10px] text-mute">@{m.handle}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex items-end gap-1.5">
         <div className="flex grow items-end gap-1.5 rounded-lg border border-line bg-page px-2 py-1 focus-within:border-accent">
           <textarea
@@ -431,7 +469,13 @@ export function ChatWindow(props: ChatWindowProps) {
               autoGrow();
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+                if (mentionCandidates.length > 0) {
+                  e.preventDefault();
+                  insertMention(mentionCandidates[0].handle);
+                  return;
+                }
+                if (e.key === "Tab") return;
                 e.preventDefault();
                 send();
               }
@@ -524,6 +568,17 @@ export function ChatWindow(props: ChatWindowProps) {
         {/* —— 私聊 —— */}
         {activeFriend && (
           <>
+            {/* Agent 私聊：常驻状态条，离线本地 agent 明确告知「消息已排队，连接器上线后处理」 */}
+            {activeFriend.isAgent && (
+              <div className="flex items-center gap-1.5 border-b border-line bg-card-hi/50 px-3 py-1.5 text-[11px]">
+                <Bot className={cn("size-3.5", activeFriend.presence.kind === "offline" ? "text-mute" : "text-green")} />
+                {activeFriend.presence.kind === "offline" && activeFriend.agentKind !== "hosted" ? (
+                  <span className="text-mute">连接器未运行 · 消息已排队，启动后会处理</span>
+                ) : (
+                  <span className={cn(presenceMeta[activeFriend.presence.kind].tone)}>{statusText(activeFriend)}</span>
+                )}
+              </div>
+            )}
             <div className="relative flex min-h-0 grow flex-col">
               {messageArea}
               {/* 右上角：邀请组建群聊（Steam +👤），悬浮不随消息滚动 */}
@@ -865,10 +920,11 @@ function MemberRow({ m, me, onOpenChat }: { m: GroupMember; me: Me; onOpenChat: 
         <span className={cn("absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-panel", meta.dot)} />
       </span>
       <span className="min-w-0 leading-tight">
-        <span className={cn("block truncate text-[13px]", offline ? "text-mute" : meta.tone)}>
-          {m.isMe ? me.name : m.name}
-          {m.remark && <span className="ml-1 text-[11px] text-dim">（{m.remark}）</span>}
-          {m.isOwner && <span className="ml-1 text-[10px] text-mute" title="群主">★</span>}
+        <span className={cn("flex items-center gap-1 truncate text-[13px]", offline ? "text-mute" : meta.tone)}>
+          <span className="truncate">{m.isMe ? me.name : m.name}</span>
+          {m.isAgent && <Bot className="size-3 shrink-0 opacity-70" />}
+          {m.remark && <span className="shrink-0 text-[11px] text-dim">（{m.remark}）</span>}
+          {m.isOwner && <span className="shrink-0 text-[10px] text-mute" title="群主">★</span>}
         </span>
         <span className={cn("block truncate text-[11px]", offline ? "text-mute" : meta.tone)}>{statusText(m)}</span>
       </span>
@@ -934,6 +990,10 @@ function MessageBody({ msg, onImage }: { msg: ViewMessage; onImage: (url: string
         <Download className="size-3.5 shrink-0 text-mute" />
       </a>
     );
+  }
+  // Agent 的回复按 markdown 渲染（代码块/列表/链接）；人类消息保持纯文本
+  if (msg.sender.isAgent) {
+    return <Markdown content={msg.body} className="max-w-full break-words" />;
   }
   return <p className="break-words text-sm leading-relaxed text-ink/90">{msg.body}</p>;
 }

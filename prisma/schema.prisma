@@ -53,6 +53,18 @@ model User {
   presenceDetail String?
   /// 资料背景（好友悬停卡展示）：图片/GIF dataURL 或图片/mp4/webm 直链，可动态
   profileBannerUrl String?
+  /// human | agent（agent = 用户创建的 AI 虚拟用户，复用整套聊天/群组/好友体系）
+  kind         String          @default("human")
+  /// agent 归属者（创建者）的 User.id
+  agentOwnerId String?
+  /// agent 形态：local（本地连接器驱动 Claude Code/Codex）| hosted（平台托管，走 AI Gateway）
+  agentKind    String?
+  /// agent 人设（托管 agent 的 system prompt；本地 agent 创建时写入其 CLAUDE.md）
+  agentPersona String?
+  /// 本地连接器令牌的 sha256（明文仅创建时显示一次）；唯一索引：鉴权 findUnique 命中
+  agentTokenHash String?         @unique
+  /// 连接器最近拉取时间（本地 agent 的在线判定）
+  agentLastPollAt String?
   library      LibraryEntry[]
   wishlist     WishlistEntry[]
   creditTxns   CreditTransaction[]
@@ -102,6 +114,31 @@ model ChatChannel {
   sort     Int            @default(0)
   group    ChatGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
   messages GroupMessage[]
+}
+
+/// Agent 收件队列：待某 agent 处理的消息（私聊必达；群聊被 @ 才投递）。
+/// 连接器长轮询领取（领取即 done）；冗余存上下文让连接器零额外查询。
+model AgentTask {
+  id             String  @id @default(cuid())
+  agentId        String
+  /// dm | group
+  kind           String
+  fromHandle     String
+  fromName       String
+  body           String
+  attachmentUrl  String?
+  attachmentName String?
+  groupId        String?
+  groupName      String?
+  channelId      String?
+  channelName    String?
+  /// agent 互相唤醒的链深（防死循环：超限不再扩散）
+  hops           Int     @default(0)
+  /// pending | done
+  status         String  @default("pending")
+  createdAt      String
+
+  @@index([agentId, status, createdAt])
 }
 
 model GroupMessage {

@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Copy, MessageSquare, Store, UserMinus, Users } from "lucide-react";
+import { Bot, Copy, MessageSquare, Store, Terminal, Trash2, UserMinus, Users } from "lucide-react";
+import { deleteAgentAction, resetAgentTokenAction, updateAgentPersonaAction, type ConnectorCommand } from "@/app/agents-actions";
 import {
   acceptRequestAction,
   addFriendAction,
@@ -24,6 +25,7 @@ import type { FriendRequestView } from "@/lib/friends-service";
 import type { GroupSummary } from "@/lib/group-service";
 import type { ChatMessage } from "@/lib/message-service";
 import type { Friend } from "@/lib/types";
+import { AgentModal, ConnectorCommandModal, PersonaModal } from "./agent-modal";
 import { channelConvKey, channelIdOf, ChatWindow, groupIdOf, groupKey, isChannelConvKey, isGroupKey, type SendPayload } from "./chat-window";
 import { AddFriendView, FriendsPanel, type Me } from "./friends-panel";
 import { GroupModal } from "./group-modal";
@@ -43,7 +45,12 @@ interface Toast {
   body: string;
   chatKey: string;
 }
-type ModalState = { mode: "create"; preselect: string[] } | { mode: "invite"; groupId: string };
+type ModalState =
+  | { mode: "create"; preselect: string[] }
+  | { mode: "invite"; groupId: string }
+  | { mode: "agent-create" }
+  | { mode: "agent-command"; command: ConnectorCommand }
+  | { mode: "agent-persona"; friend: Friend };
 
 const preview = (kind: string, body: string, attachmentName?: string | null) =>
   kind === "image" ? "[图片]" : kind === "file" ? `[文件] ${attachmentName ?? ""}` : body;
@@ -168,7 +175,7 @@ export function SocialLayer({
     (handle: string, messages: ChatMessage[]): ViewMessage[] => {
       const f = friendsRef.current.find((x) => x.handle === handle);
       const friendSender: MsgSender = f
-        ? { handle: f.handle, name: f.name, avatarHue: f.avatarHue, avatarUrl: f.avatarUrl }
+        ? { handle: f.handle, name: f.name, avatarHue: f.avatarHue, avatarUrl: f.avatarUrl, isAgent: f.isAgent }
         : { handle, name: handle, avatarHue: 0, avatarUrl: null };
       return messages.map((m) => ({
         id: m.id,
@@ -405,7 +412,7 @@ export function SocialLayer({
             attachmentUrl: m.attachmentUrl,
             attachmentName: m.attachmentName,
             at: m.at,
-            sender: { handle, name: m.fromName, avatarHue: f?.avatarHue ?? 0, avatarUrl: f?.avatarUrl ?? null },
+            sender: { handle, name: m.fromName, avatarHue: f?.avatarHue ?? 0, avatarUrl: f?.avatarUrl ?? null, isAgent: f?.isAgent },
           });
           if (activeChatRef.current !== handle) {
             markUnread(handle, handle, m.id);
@@ -619,6 +626,7 @@ export function SocialLayer({
                   onOpenChat={openChat}
                   onOpenGroup={openGroup}
                   onCreateGroup={() => setModal({ mode: "create", preselect: [] })}
+                  onCreateAgent={() => setModal({ mode: "agent-create" })}
                   onContextMenu={onContextMenu}
                 />
               )}
@@ -683,6 +691,23 @@ export function SocialLayer({
         />
       )}
 
+      {/* AI Agent：创建 / 连接命令 / 人设 */}
+      {modal?.mode === "agent-create" && (
+        <AgentModal onClose={() => setModal(null)} onCreated={refresh} onOpenChat={openChat} />
+      )}
+      {modal?.mode === "agent-command" && <ConnectorCommandModal command={modal.command} onClose={() => setModal(null)} />}
+      {modal?.mode === "agent-persona" && (
+        <PersonaModal
+          name={modal.friend.name}
+          initial={modal.friend.persona ?? ""}
+          onSave={async (persona) => {
+            await updateAgentPersonaAction(modal.friend.handle, persona);
+            await refresh();
+          }}
+          onClose={() => setModal(null)}
+        />
+      )}
+
       {menu && (
         <FriendContextMenu
           state={menu}
@@ -704,6 +729,20 @@ export function SocialLayer({
               await refresh();
             }
           }}
+          onAgentCommand={async () => {
+            const f = menu.friend;
+            if (!window.confirm(`重置「${f.name}」的连接令牌并生成新命令？（旧令牌会立即失效）`)) return;
+            const res = await resetAgentTokenAction(f.handle, f.agentKind ?? "local-claude");
+            if (res.ok && res.command) setModal({ mode: "agent-command", command: res.command });
+          }}
+          onAgentPersona={() => setModal({ mode: "agent-persona", friend: menu.friend })}
+          onAgentDelete={async () => {
+            if (window.confirm(`确定删除 Agent「${menu.friend.name}」？聊天记录会一并清除。`)) {
+              await deleteAgentAction(menu.friend.handle);
+              closeChat(menu.friend.handle);
+              await refresh();
+            }
+          }}
         />
       )}
     </>
@@ -718,6 +757,9 @@ function FriendContextMenu({
   onInviteToGroup,
   onRemark,
   onRemove,
+  onAgentCommand,
+  onAgentPersona,
+  onAgentDelete,
 }: {
   state: ContextMenuState;
   onClose: () => void;
@@ -725,18 +767,31 @@ function FriendContextMenu({
   onInviteToGroup: () => void;
   onRemark: () => void;
   onRemove: () => void;
+  onAgentCommand: () => void;
+  onAgentPersona: () => void;
+  onAgentDelete: () => void;
 }) {
   const usingApp = state.friend.presence.kind === "using" ? state.friend.presence.appSlug : undefined;
-  const items = [
-    { label: "发消息", icon: MessageSquare, run: onMessage },
-    { label: "查看个人主页", icon: Users, run: () => (window.location.href = `/u/${state.friend.handle}`) },
-    ...(usingApp
-      ? [{ label: "TA 正在玩的应用", icon: Store, run: () => (window.location.href = `/p/${usingApp}`) }]
-      : []),
-    { label: "邀请到群组聊天", icon: Users, run: onInviteToGroup },
-    { label: "设置备注", icon: Copy, run: onRemark },
-    { label: "删除好友", icon: UserMinus, run: onRemove, danger: true },
-  ];
+  const items = state.friend.isAgent
+    ? [
+        { label: "发消息", icon: MessageSquare, run: onMessage },
+        { label: "邀请到群组聊天", icon: Users, run: onInviteToGroup },
+        { label: "编辑人设", icon: Bot, run: onAgentPersona },
+        ...(state.friend.agentKind !== "hosted"
+          ? [{ label: "连接命令（重置令牌）", icon: Terminal, run: onAgentCommand }]
+          : []),
+        { label: "删除 Agent", icon: Trash2, run: onAgentDelete, danger: true },
+      ]
+    : [
+        { label: "发消息", icon: MessageSquare, run: onMessage },
+        { label: "查看个人主页", icon: Users, run: () => (window.location.href = `/u/${state.friend.handle}`) },
+        ...(usingApp
+          ? [{ label: "TA 正在玩的应用", icon: Store, run: () => (window.location.href = `/p/${usingApp}`) }]
+          : []),
+        { label: "邀请到群组聊天", icon: Users, run: onInviteToGroup },
+        { label: "设置备注", icon: Copy, run: onRemark },
+        { label: "删除好友", icon: UserMinus, run: onRemove, danger: true },
+      ];
   const left = Math.min(state.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 180);
   const top = Math.min(state.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 200);
   return (

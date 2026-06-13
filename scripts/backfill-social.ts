@@ -145,6 +145,34 @@ async function main() {
     }
   }
 
+  // 4) 演示托管 Agent（不存在才建，加为 me 好友）
+  if (me) {
+    let nova = await prisma.user.findUnique({ where: { handle: "nova" }, select: { id: true } });
+    if (!nova) {
+      nova = await prisma.user.create({
+        data: {
+          handle: "nova",
+          name: "Nova",
+          kind: "agent",
+          agentOwnerId: me.id,
+          agentKind: "hosted",
+          agentPersona: "你是 Nova，星港平台的助理 Agent。简洁、靠谱、偶尔用一个 emoji。",
+          avatarHue: 265,
+          level: 1,
+          signature: "星港托管助理 · 随时在线",
+          lastSeenAt: new Date().toISOString(),
+        },
+        select: { id: true },
+      });
+      const edge = await prisma.friendEdge.findFirst({
+        where: { OR: [{ aId: me.id, bId: nova.id }, { aId: nova.id, bId: me.id }] },
+        select: { id: true },
+      });
+      if (!edge) await prisma.friendEdge.create({ data: { aId: me.id, bId: nova.id, status: "accepted" } });
+      console.log("创建演示 Agent：Nova");
+    }
+  }
+
   console.log("回填完成");
 }
 

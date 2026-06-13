@@ -1,4 +1,5 @@
 import "server-only";
+import { fanoutGroup } from "@/lib/agent-service";
 import { prisma } from "@/lib/db";
 import { attachAppIcons, compareFriends, friendIdsOf, friendUserSelect, toFriend } from "@/lib/friends-service";
 import type { MessageKind, SendInput } from "@/lib/message-service";
@@ -35,7 +36,7 @@ export interface GroupChatMessage {
   attachmentUrl?: string | null;
   attachmentName?: string | null;
   at: string;
-  sender: { handle: string; name: string; avatarHue: number; avatarUrl: string | null };
+  sender: { handle: string; name: string; avatarHue: number; avatarUrl: string | null; isAgent?: boolean };
 }
 
 export interface GroupChannelPage {
@@ -205,7 +206,7 @@ function toGroupMessage(m: {
   attachmentUrl: string | null;
   attachmentName: string | null;
   at: string;
-  from: { handle: string; name: string; avatarHue: number; avatarUrl: string | null };
+  from: { handle: string; name: string; avatarHue: number; avatarUrl: string | null; kind: string };
 }): GroupChatMessage {
   return {
     id: m.id,
@@ -214,7 +215,7 @@ function toGroupMessage(m: {
     attachmentUrl: m.attachmentUrl,
     attachmentName: m.attachmentName,
     at: m.at,
-    sender: m.from,
+    sender: { handle: m.from.handle, name: m.from.name, avatarHue: m.from.avatarHue, avatarUrl: m.from.avatarUrl, isAgent: m.from.kind === "agent" },
   };
 }
 
@@ -236,7 +237,7 @@ export async function getChannelPage(channelId: string, beforeIso?: string): Pro
       attachmentUrl: true,
       attachmentName: true,
       at: true,
-      from: { select: { handle: true, name: true, avatarHue: true, avatarUrl: true } },
+      from: { select: { handle: true, name: true, avatarHue: true, avatarUrl: true, kind: true } },
     },
   });
   const hasMore = rows.length > PAGE_SIZE;
@@ -251,7 +252,7 @@ export async function sendGroupMessage(channelId: string, body: string, input: S
   await membershipOrThrow(channel.groupId, userId);
 
   const kind = input.kind ?? "text";
-  const clean = body.trim();
+  const clean = body.trim().slice(0, 8000);
   if (kind === "text" && !clean) throw new Error("消息不能为空");
   if (input.attachmentUrl) {
     if (!/^data:/.test(input.attachmentUrl)) throw new Error("附件格式非法");
@@ -276,8 +277,21 @@ export async function sendGroupMessage(channelId: string, body: string, input: S
       attachmentUrl: true,
       attachmentName: true,
       at: true,
-      from: { select: { handle: true, name: true, avatarHue: true, avatarUrl: true } },
+      from: { select: { handle: true, name: true, avatarHue: true, avatarUrl: true, kind: true } },
     },
+  });
+  // 群里被 @ 的 agent 成员被唤醒
+  const me = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { handle: true, name: true, kind: true } });
+  await fanoutGroup({
+    fromId: userId,
+    fromHandle: me.handle,
+    fromName: me.name,
+    fromKind: me.kind,
+    body: clean,
+    attachmentUrl: input.attachmentUrl,
+    attachmentName: input.attachmentName,
+    groupId: channel.groupId,
+    channelId,
   });
   return toGroupMessage(created);
 }
@@ -301,7 +315,7 @@ export async function getGroupIncomingSince(sinceIso: string, untilIso: string):
       attachmentUrl: true,
       attachmentName: true,
       at: true,
-      from: { select: { handle: true, name: true, avatarHue: true, avatarUrl: true } },
+      from: { select: { handle: true, name: true, avatarHue: true, avatarUrl: true, kind: true } },
     },
   });
   return rows.map((r) => ({ ...toGroupMessage(r), groupId: r.groupId, channelId: r.channelId }));

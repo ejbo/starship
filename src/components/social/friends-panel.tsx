@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ChevronDown, Copy, Plus, Search, UserPlus, X } from "lucide-react";
+import { Bot, Check, ChevronDown, Copy, Plus, Search, UserPlus, X } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { getProductIcon } from "@/lib/icons";
 import { cn } from "@/lib/cn";
@@ -101,15 +101,16 @@ function FriendRow({
       {...miniProfileProps(friend)}
       className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-card-hi"
     >
-      {(using || meeting) && <AppIcon friend={friend} />}
+      {(using || meeting) && !friend.isAgent && <AppIcon friend={friend} />}
       <span className="relative shrink-0">
         <Avatar name={display(friend)} hue={friend.avatarHue} src={friend.avatarUrl} size="sm" className={cn(offline && "opacity-45")} />
         <span className={cn("absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-panel", meta.dot)} />
       </span>
       <span className="min-w-0 leading-tight">
-        <span className={cn("block truncate text-sm", offline ? "text-mute" : meta.tone)}>
-          {friend.name}
-          {friend.remark && <span className={cn("ml-1 text-xs", offline ? "text-mute/70" : "text-dim")}>（{friend.remark}）</span>}
+        <span className={cn("flex items-center gap-1 truncate text-sm", offline ? "text-mute" : meta.tone)}>
+          <span className="truncate">{friend.name}</span>
+          {friend.isAgent && <Bot className="size-3 shrink-0 opacity-70" />}
+          {friend.remark && <span className={cn("shrink-0 text-xs", offline ? "text-mute/70" : "text-dim")}>（{friend.remark}）</span>}
         </span>
         <span className={cn("block truncate text-[11px]", offline ? "text-mute" : meta.tone, using && "font-medium")}>
           {statusText(friend)}
@@ -157,6 +158,7 @@ export function FriendsPanel({
   onOpenChat,
   onOpenGroup,
   onCreateGroup,
+  onCreateAgent,
   onContextMenu,
 }: {
   me: Me;
@@ -171,9 +173,11 @@ export function FriendsPanel({
   onOpenChat: (h: string) => void;
   onOpenGroup: (id: string) => void;
   onCreateGroup: () => void;
+  onCreateAgent: () => void;
   onContextMenu: (e: React.MouseEvent, f: Friend) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [tab, setTab] = useState<"friends" | "agents">("friends");
   const toggle = (key: string) =>
     setCollapsed((cur) => {
       const next = new Set(cur);
@@ -182,10 +186,13 @@ export function FriendsPanel({
       return next;
     });
 
-  const filtered = friends.filter((f) => display(f).includes(query) || f.name.includes(query) || f.handle.includes(query));
-  const inApp = filtered.filter((f) => f.presence.kind === "using" || f.presence.kind === "meeting");
-  const online = filtered.filter((f) => f.presence.kind === "online");
-  const offline = filtered.filter((f) => f.presence.kind === "offline");
+  const matched = friends.filter((f) => display(f).includes(query) || f.name.includes(query) || f.handle.includes(query));
+  const humans = matched.filter((f) => !f.isAgent);
+  const agents = matched.filter((f) => f.isAgent);
+  const agentTotal = friends.filter((f) => f.isAgent).length;
+  const inApp = humans.filter((f) => f.presence.kind === "using" || f.presence.kind === "meeting");
+  const online = humans.filter((f) => f.presence.kind === "online");
+  const offline = humans.filter((f) => f.presence.kind === "offline");
   const filteredGroups = groups.filter((g) => g.name.includes(query));
   const myMeta = presenceMeta[myPresence.kind];
 
@@ -232,68 +239,121 @@ export function FriendsPanel({
         </div>
       </div>
 
+      {/* 好友 / AI Agents 双 tab */}
+      <div className="flex items-center gap-1 border-b border-line px-3 pt-2">
+        {(
+          [
+            { key: "friends" as const, label: "好友", count: friends.length - agentTotal },
+            { key: "agents" as const, label: "AI Agents", count: agentTotal },
+          ]
+        ).map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-t-lg border-b-2 px-3 py-1.5 text-sm transition-colors",
+              tab === t.key ? "border-accent font-medium text-ink" : "border-transparent text-dim hover:text-ink",
+            )}
+          >
+            {t.key === "agents" && <Bot className="size-3.5" />}
+            {t.label}
+            <span className="text-[11px] text-mute">{t.count}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="border-b border-line px-3 py-2">
         <label className="flex items-center gap-2 rounded-lg border border-line bg-page px-2.5 py-1.5 text-sm text-mute focus-within:border-accent">
           <Search className="size-3.5" />
           <input
             value={query}
             onChange={(e) => onQuery(e.target.value)}
-            placeholder="按名字搜索好友或群组"
+            placeholder={tab === "agents" ? "按名字搜索 Agent" : "按名字搜索好友或群组"}
             className="w-full bg-transparent text-ink placeholder:text-mute focus:outline-none"
           />
         </label>
       </div>
 
-      <div className="grow overflow-y-auto px-1 pb-1">
-        {friends.length === 0 ? (
-          <p className="px-2 pt-8 text-center text-xs text-mute">还没有好友，点右上角添加。</p>
-        ) : (
-          <>
-            {renderSection("inapp", "正在使用", inApp)}
-            {renderSection("online", "在线好友", online)}
-            {renderSection("offline", "离线", offline)}
-          </>
-        )}
-
-        {/* 群组聊天（Steam GROUP CHATS） */}
-        <div className="mt-1 border-t border-line">
-          <SectionHeader
-            label="群组聊天"
-            count={groups.length || undefined}
-            collapsed={collapsed.has("groups")}
-            onToggle={() => toggle("groups")}
-            action={
-              <button onClick={onCreateGroup} className="rounded-md p-1 text-dim transition-colors hover:bg-card-hi hover:text-accent" title="创建群组聊天" aria-label="创建群组聊天">
-                <Plus className="size-3.5" />
-              </button>
-            }
-          />
-          {!collapsed.has("groups") &&
-            (filteredGroups.length === 0 ? (
-              <p className="px-2 pb-2 pt-1 text-[11px] text-mute">{groups.length === 0 ? "还没有群组，点 + 和好友开一个。" : "没有匹配的群组"}</p>
+      {tab === "agents" ? (
+        <div className="grow overflow-y-auto px-1 pb-1">
+          <button
+            onClick={onCreateAgent}
+            className="mx-1 mt-2 flex w-[calc(100%-0.5rem)] items-center justify-center gap-1.5 rounded-lg border border-dashed border-line py-2 text-sm text-dim transition-colors hover:border-accent/50 hover:text-accent"
+          >
+            <Plus className="size-4" /> 添加 Agent
+          </button>
+          {agents.length === 0 ? (
+            agentTotal > 0 ? (
+              <p className="px-3 pt-6 text-center text-xs text-mute">没有匹配的 Agent</p>
             ) : (
-              filteredGroups.map((g) => {
-                const onlineCount = g.members.filter((m) => !m.isMe && m.presence.kind !== "offline").length;
-                return (
-                  <button
-                    key={g.id}
-                    onClick={() => onOpenGroup(g.id)}
-                    className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-card-hi"
-                  >
-                    <GroupAvatar group={g} />
-                    <span className="min-w-0 leading-tight">
-                      <span className="block truncate text-sm text-ink">{g.name}</span>
-                      <span className="block truncate text-[11px] text-mute">
-                        {onlineCount > 0 ? `${onlineCount} 人在线 · ` : ""}{g.members.length} 名成员
-                      </span>
-                    </span>
-                  </button>
-                );
-              })
-            ))}
+              <p className="px-3 pt-6 text-center text-xs leading-relaxed text-mute">
+                还没有 AI Agent。
+                <br />
+                一键创建：托管的秒上线，本地的接 Claude Code / Codex，
+                <br />
+                可私聊指挥、可拉进群组和大家协作。
+              </p>
+            )
+          ) : (
+            <div className="mt-1.5">
+              {agents.map((f) => (
+                <FriendRow key={f.handle} friend={f} onOpenChat={onOpenChat} onContextMenu={onContextMenu} />
+              ))}
+            </div>
+          )}
         </div>
-      </div>
-      <div className="border-t border-line px-3 py-1.5 text-center text-[10px] text-mute">双击好友打开聊天 · 右键更多操作</div>
+      ) : (
+        <div className="grow overflow-y-auto px-1 pb-1">
+          {humans.length === 0 && query === "" ? (
+            <p className="px-2 pt-8 text-center text-xs text-mute">还没有好友，点右上角添加。</p>
+          ) : (
+            <>
+              {renderSection("inapp", "正在使用", inApp)}
+              {renderSection("online", "在线好友", online)}
+              {renderSection("offline", "离线", offline)}
+            </>
+          )}
+
+          {/* 群组聊天（Steam GROUP CHATS） */}
+          <div className="mt-1 border-t border-line">
+            <SectionHeader
+              label="群组聊天"
+              count={groups.length || undefined}
+              collapsed={collapsed.has("groups")}
+              onToggle={() => toggle("groups")}
+              action={
+                <button onClick={onCreateGroup} className="rounded-md p-1 text-dim transition-colors hover:bg-card-hi hover:text-accent" title="创建群组聊天" aria-label="创建群组聊天">
+                  <Plus className="size-3.5" />
+                </button>
+              }
+            />
+            {!collapsed.has("groups") &&
+              (filteredGroups.length === 0 ? (
+                <p className="px-2 pb-2 pt-1 text-[11px] text-mute">{groups.length === 0 ? "还没有群组，点 + 和好友开一个。" : "没有匹配的群组"}</p>
+              ) : (
+                filteredGroups.map((g) => {
+                  const onlineCount = g.members.filter((m) => !m.isMe && m.presence.kind !== "offline").length;
+                  return (
+                    <button
+                      key={g.id}
+                      onClick={() => onOpenGroup(g.id)}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-card-hi"
+                    >
+                      <GroupAvatar group={g} />
+                      <span className="min-w-0 leading-tight">
+                        <span className="block truncate text-sm text-ink">{g.name}</span>
+                        <span className="block truncate text-[11px] text-mute">
+                          {onlineCount > 0 ? `${onlineCount} 人在线 · ` : ""}{g.members.length} 名成员
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })
+              ))}
+          </div>
+        </div>
+      )}
+      <div className="border-t border-line px-3 py-1.5 text-center text-[10px] text-mute">双击打开聊天 · 右键更多操作</div>
     </>
   );
 }

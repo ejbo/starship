@@ -88,6 +88,10 @@ export const friendUserSelect = {
   activityAt: true,
   presenceKind: true,
   presenceDetail: true,
+  kind: true,
+  agentKind: true,
+  agentLastPollAt: true,
+  agentPersona: true,
 } as const;
 
 type FriendUserRow = {
@@ -105,10 +109,29 @@ type FriendUserRow = {
   activityAt: string | null;
   presenceKind: string;
   presenceDetail: string | null;
+  kind: string;
+  agentKind: string | null;
+  agentLastPollAt: string | null;
+  agentPersona: string | null;
 };
+
+const AGENT_POLL_ONLINE_MS = 90_000;
 
 export function toFriend(u: FriendUserRow, remark: string | null): Friend {
   const badges = (u.badges as { label: string; icon: string }[]) ?? [];
+  let presence = derivePresence(u);
+  if (u.kind === "agent") {
+    if (u.agentKind === "hosted") {
+      // 托管 agent：恒在线，但运行中保留「正在处理…」富状态
+      if (presence.kind !== "using") presence = { kind: "online" };
+    } else {
+      // 本地 agent：以连接器最近拉取为准；连接器一旦停（>90s）即离线，
+      // 即便残留 activity「正在处理…」也不能压过离线判定（防崩溃后假活跃卡 10 分钟）
+      const connectorLive = !!u.agentLastPollAt && Date.now() - Date.parse(u.agentLastPollAt) < AGENT_POLL_ONLINE_MS;
+      if (!connectorLive) presence = { kind: "offline" };
+      else if (presence.kind !== "using") presence = { kind: "online" };
+    }
+  }
   return {
     handle: u.handle,
     name: u.name,
@@ -116,10 +139,13 @@ export function toFriend(u: FriendUserRow, remark: string | null): Friend {
     avatarHue: u.avatarHue,
     avatarUrl: u.avatarUrl,
     level: u.level,
-    lastSeenAt: u.lastSeenAt,
+    lastSeenAt: u.kind === "agent" ? u.agentLastPollAt : u.lastSeenAt,
     bannerUrl: u.profileBannerUrl,
     badge: badges[0] ?? null,
-    presence: derivePresence(u),
+    isAgent: u.kind === "agent",
+    agentKind: u.agentKind,
+    persona: u.kind === "agent" ? u.agentPersona : undefined,
+    presence,
   };
 }
 

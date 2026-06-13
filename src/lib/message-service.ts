@@ -1,4 +1,5 @@
 import "server-only";
+import { fanoutDm } from "@/lib/agent-service";
 import { prisma } from "@/lib/db";
 import { getSessionUserId } from "@/lib/session";
 
@@ -86,7 +87,7 @@ export interface SendInput {
 export async function sendMessage(handle: string, body: string, input: SendInput = {}): Promise<ChatMessage> {
   const userId = await getSessionUserId();
   const kind = input.kind ?? "text";
-  const clean = body.trim();
+  const clean = body.trim().slice(0, 8000);
   if (kind === "text" && !clean) throw new Error("消息不能为空");
   if (input.attachmentUrl) {
     if (!/^data:/.test(input.attachmentUrl)) throw new Error("附件格式非法");
@@ -108,6 +109,18 @@ export async function sendMessage(handle: string, body: string, input: SendInput
       at,
     },
     select: { id: true },
+  });
+  // 对方是 agent 时唤醒它（本地 → 入队给连接器；托管 → 平台生成回复）
+  const me = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { handle: true, name: true, kind: true } });
+  await fanoutDm({
+    fromId: userId,
+    fromHandle: me.handle,
+    fromName: me.name,
+    fromKind: me.kind,
+    body: clean,
+    attachmentUrl: input.attachmentUrl,
+    attachmentName: input.attachmentName,
+    toId: other.id,
   });
   return {
     id: created.id,

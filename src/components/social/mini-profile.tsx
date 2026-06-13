@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Bot } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { getProductIcon } from "@/lib/icons";
 import { cn } from "@/lib/cn";
@@ -82,11 +83,19 @@ export function MiniProfileCard({ friend }: { friend: Friend }) {
             <p className="text-xs font-medium text-ink">等级 {friend.level}</p>
             <p className="truncate text-[11px] text-mute">@{friend.handle}</p>
           </div>
-          {friend.badge && BadgeIcon && (
-            <span className="ml-auto flex items-center gap-1.5 rounded-md border border-line bg-card-hi px-2 py-1 text-[11px] text-dim" title={friend.badge.label}>
-              <BadgeIcon className="size-3.5 text-accent" />
-              {friend.badge.label}
+          {friend.isAgent ? (
+            <span className="ml-auto flex items-center gap-1.5 rounded-md border border-line bg-card-hi px-2 py-1 text-[11px] text-dim">
+              <Bot className="size-3.5 text-green" />
+              {friend.agentKind === "hosted" ? "托管 Agent" : "本地 Agent"}
             </span>
+          ) : (
+            friend.badge &&
+            BadgeIcon && (
+              <span className="ml-auto flex items-center gap-1.5 rounded-md border border-line bg-card-hi px-2 py-1 text-[11px] text-dim" title={friend.badge.label}>
+                <BadgeIcon className="size-3.5 text-accent" />
+                {friend.badge.label}
+              </span>
+            )
           )}
         </div>
       </div>

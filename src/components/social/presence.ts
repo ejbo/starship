@@ -24,8 +24,13 @@ export function timeAgo(iso: string): string {
   return `${Math.floor(days / 30)} 个月前`;
 }
 
-/** 状态行文案：离线好友显示「最后在线 X 前」 */
+/** 状态行文案：离线好友显示「最后在线 X 前」；agent 有专属文案 */
 export function statusText(f: Friend): string {
+  if (f.isAgent) {
+    if (f.presence.kind === "using") return presenceMeta.using.text(f.presence.detail);
+    if (f.presence.kind === "offline") return f.lastSeenAt ? `连接器未运行 · ${timeAgo(f.lastSeenAt)}` : "连接器未运行";
+    return f.agentKind === "hosted" ? "在线 · 托管" : "在线";
+  }
   if (f.presence.kind === "offline") {
     return f.lastSeenAt ? `最后在线 ${timeAgo(f.lastSeenAt)}` : "离线";
   }
@@ -80,6 +85,8 @@ export interface MsgSender {
   name: string;
   avatarHue: number;
   avatarUrl?: string | null;
+  /** AI Agent 的消息按 markdown 渲染，头像带机器人角标 */
+  isAgent?: boolean;
 }
 
 export interface ViewMessage {

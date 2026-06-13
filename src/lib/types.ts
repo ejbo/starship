@@ -83,6 +83,12 @@ export interface Friend {
   bannerUrl?: string | null;
   /** 展示徽章（悬停卡），取用户徽章第一枚 */
   badge?: { label: string; icon: string } | null;
+  /** AI Agent 虚拟用户（好友面板单独 tab、消息按 markdown 渲染） */
+  isAgent?: boolean;
+  /** hosted（平台托管）| local-claude | local-codex */
+  agentKind?: string | null;
+  /** agent 人设（编辑人设弹窗回显） */
+  persona?: string | null;
   presence: { kind: PresenceKind; detail?: string; appSlug?: string; appIcon?: AppIconArt | null };
 }
 
