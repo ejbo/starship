@@ -89,6 +89,20 @@ export interface MsgSender {
   isAgent?: boolean;
 }
 
+export interface ReactionAgg {
+  emoji: string;
+  count: number;
+  /** 当前用户是否加了这个反应 */
+  mine: boolean;
+}
+
+export interface ReplyPreview {
+  id: string;
+  senderName: string;
+  excerpt: string;
+  kind: MessageKind;
+}
+
 export interface ViewMessage {
   id: string;
   kind: MessageKind;
@@ -97,6 +111,23 @@ export interface ViewMessage {
   attachmentName?: string | null;
   at: string;
   sender: MsgSender;
+  editedAt?: string | null;
+  deleted?: boolean;
+  replyTo?: ReplyPreview | null;
+  reactions?: ReactionAgg[];
+  /** 变更游标：轮询 patch 时做幂等护栏 */
+  updatedAt?: string | null;
+}
+
+/** 消息变更（轮询增量）：编辑/删除/反应都压在这一条 */
+export interface MessageMutation {
+  id: string;
+  convKey: string;
+  body: string;
+  editedAt: string | null;
+  deleted: boolean;
+  reactions: ReactionAgg[];
+  updatedAt: string;
 }
 
 export interface Conversation {
@@ -134,7 +165,118 @@ export function groupByDayAndSender(messages: ViewMessage[], markerId?: string |
 }
 
 // 按 grapheme 切分（/./gu 会把「❤️」的 VS16 拆成不可见独立项）
-export const EMOJIS = [...new Intl.Segmenter().segment("😀😄😁😆😉😊🙂😍😘😎🤔😐😴😭😡👍👎👌🙏👏💪🎉🔥✨💯❤️💔⭐🌟✅❌❓💡📌🚀☕🍻🐶🐱")].map((s) => s.segment);
+const seg = (s: string) => [...new Intl.Segmenter().segment(s)].map((x) => x.segment);
+
+/** 分组 emoji（关键词供搜索）。手维字典，不引第三方大包 */
+export const EMOJI_GROUPS: { key: string; label: string; emojis: string[]; kw?: Record<string, string> }[] = [
+  { key: "smiley", label: "笑脸", emojis: seg("😀😃😄😁😆😅😂🤣😊🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥳🤩😏😒😞😔😟😕🙁😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😱😨😰😥😓🤗🤔🤭🤫🤥😶😐😑😬🙄😯😦😧😮😲🥱😴🤤😪😵🤐🥴🤢🤮🤧😷🤒🤕") },
+  { key: "gesture", label: "手势", emojis: seg("👍👎👌✌️🤞🤟🤘🤙👈👉👆👇☝️✋🤚🖐️🖖👋🤝🙏✍️💅🤳💪🦾👏🙌👐🤲") },
+  { key: "heart", label: "情感", emojis: seg("❤️🧡💛💚💙💜🖤🤍🤎💔❣️💕💞💓💗💖💘💝💯✨⭐🌟💫🔥🎉🎊🎈") },
+  { key: "animal", label: "动物", emojis: seg("🐶🐱🐭🐹🐰🦊🐻🐼🐨🐯🦁🐮🐷🐸🐵🐔🐧🐦🐤🦄🐝🐛🦋🐌🐞🐢🐍🐙🦀🐠🐟🐬🐳🐋🦈") },
+  { key: "food", label: "食物", emojis: seg("🍎🍊🍋🍌🍉🍇🍓🍑🍍🥝🍅🥑🌶️🌽🥕🍞🧀🍳🍔🍟🍕🌭🍿🥪🍜🍣🍱🍙🍚🍦🍰🎂🍫🍬🍭☕🍵🍺🍻🥂🍷🥤") },
+  { key: "symbol", label: "符号", emojis: seg("✅❌❓❗💡📌📎🔒🔑🚀⚡🌈☀️🌙⭐🎯🏆🥇📈📉💰🎁🔔🔕✔️➕➖⚠️🆗🆕🔝") },
+];
+
+/** 扁平全集（向后兼容旧 EMOJIS 用法） */
+export const EMOJIS = EMOJI_GROUPS.flatMap((g) => g.emojis);
+
+/** 反应快捷栏常用表情 */
+export const QUICK_REACTIONS = seg("👍❤️😂🎉😮😢🙏🔥");
+
+const RECENT_EMOJI_KEY = "starport_recent_emoji";
+export function loadRecentEmojis(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_EMOJI_KEY);
+    return raw ? (JSON.parse(raw) as string[]).slice(0, 16) : [];
+  } catch {
+    return [];
+  }
+}
+export function pushRecentEmoji(em: string) {
+  try {
+    const cur = loadRecentEmojis().filter((e) => e !== em);
+    localStorage.setItem(RECENT_EMOJI_KEY, JSON.stringify([em, ...cur].slice(0, 16)));
+  } catch {
+    /* ignore */
+  }
+}
+
+// —— 语音消息 ——
+
+/** 能否录音：需安全上下文(https/localhost) + MediaRecorder + getUserMedia */
+export function canRecordVoice(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.isSecureContext === true &&
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices?.getUserMedia &&
+    typeof MediaRecorder !== "undefined"
+  );
+}
+
+/** 浏览器原生语音识别（Chrome/Edge），不可用返回 null */
+export function getSpeechRecognition(): (new () => unknown) | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
+  return (w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null) as (new () => unknown) | null;
+}
+
+/** 选一个本浏览器支持的录音 mime（Chrome/FF webm/opus，Safari mp4） */
+export function pickAudioMime(): string {
+  const cands = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+  for (const m of cands) {
+    try {
+      if (MediaRecorder.isTypeSupported(m)) return m;
+    } catch {
+      /* ignore */
+    }
+  }
+  return "";
+}
+
+export function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("音频读取失败"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** 语音消息把时长编进 attachmentName："voice:12.4"（零迁移）；秒数格式化 */
+export const VOICE_NAME_PREFIX = "voice:";
+export function voiceDuration(attachmentName?: string | null): number {
+  if (!attachmentName?.startsWith(VOICE_NAME_PREFIX)) return 0;
+  return Number(attachmentName.slice(VOICE_NAME_PREFIX.length)) || 0;
+}
+export function formatDuration(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** 一条消息的引用摘要文案（用于回复预览） */
+export function replyExcerpt(m: ViewMessage): string {
+  if (m.deleted) return "已删除的消息";
+  if (m.kind === "image") return "[图片]";
+  if (m.kind === "file") return "[文件]";
+  if (m.kind === "voice") return "[语音]";
+  return m.body.slice(0, 60);
+}
+
+/** 把 URL 文本切成 [文本/链接] 段，供 React 安全渲染（绝不 innerHTML） */
+export function linkify(text: string): { type: "text" | "link"; value: string }[] {
+  const re = /(https?:\/\/[^\s]+)/g;
+  const out: { type: "text" | "link"; value: string }[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push({ type: "text", value: text.slice(last, m.index) });
+    out.push({ type: "link", value: m[0] });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push({ type: "text", value: text.slice(last) });
+  return out;
+}
 
 /** 把图片压缩成较小的 JPEG dataURL */
 export function imageToDataUrl(file: File): Promise<string> {

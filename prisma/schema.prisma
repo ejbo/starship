@@ -81,6 +81,54 @@ model User {
   messagesReceived Message[]   @relation("MsgTo")
   groupMemberships ChatGroupMember[]
   groupMessages    GroupMessage[]
+  reactions        MessageReaction[]
+}
+
+/// 消息表情反应（私聊+群聊合一，scope 区分；messageId 指向 Message.id 或 GroupMessage.id）
+model MessageReaction {
+  id        String @id @default(cuid())
+  /// dm | group
+  scope     String
+  messageId String
+  userId    String
+  emoji     String
+  at        String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([scope, messageId, userId, emoji])
+  @@index([scope, messageId])
+}
+
+/// 会话级实时信号（typing 心跳 + 已读游标），user × 会话(scope) 维度。scope: dm:<otherId> | ch:<channelId>
+model ChatSignal {
+  id        String  @id @default(cuid())
+  userId    String
+  scope     String
+  /// 最近一次「我在该会话打字」的 ISO；过期(>5s)视为停止
+  typingAt  String?
+  /// 我在该会话已读到的最后消息时刻（ISO）
+  readAt    String?
+  /// scope=ch 时冗余 channelId，便于按频道聚合成员已读
+  channelId String?
+
+  @@unique([userId, scope])
+  @@index([scope])
+  @@index([channelId])
+}
+
+/// 语音房间在场（roomId = ChatChannel.id，kind=voice）。纯轮询同步，裸 http 可用
+model VoiceParticipant {
+  id         String  @id @default(cuid())
+  roomId     String
+  userId     String
+  joinedAt   String
+  /// 每轮 poll 刷新；服务端读时 6s 窗口判活（兜掉关页面没发离开）
+  lastSeenAt String
+  micOn      Boolean @default(true)
+  speaking   Boolean @default(false)
+
+  @@unique([roomId, userId])
+  @@index([roomId])
 }
 
 /// 群组聊天（Steam 式 Group Chat：多人 + 多频道）
@@ -148,19 +196,30 @@ model GroupMessage {
   groupId        String
   channelId      String
   fromId         String
-  /// text | image | file
+  /// text | image | file | voice
   kind           String      @default("text")
   body           String
   attachmentUrl  String?
   attachmentName String?
   /// ISO 字符串
   at             String
+  /// 编辑过则为最后编辑 ISO（UI 显示「已编辑」）
+  editedAt       String?
+  /// 软删除：保留行占位「此消息已删除」，不剔除（分页游标/未读 marker 依赖）
+  deleted        Boolean     @default(false)
+  /// 引用的消息 id（同表自引用）
+  replyToId      String?
+  /// 变更游标：create/edit/delete/反应增删 时刷新为 now；轮询用 updatedAt>since 取变更行
+  updatedAt      String?
   group          ChatGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
   channel        ChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
   from           User        @relation(fields: [fromId], references: [id], onDelete: Cascade)
+  replyTo        GroupMessage?  @relation("GMReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies        GroupMessage[] @relation("GMReply")
 
   @@index([channelId, at])
   @@index([groupId, at])
+  @@index([channelId, updatedAt])
 }
 
 /// 好友备注（我给某好友起的别名，仅自己可见）
@@ -178,19 +237,30 @@ model Message {
   fromId String
   toId   String
   body   String
-  /// text | image | file
+  /// text | image | file | voice
   kind   String  @default("text")
-  /// 图片/文档的 dataURL（压缩后）
+  /// 图片/文档/语音的 dataURL（压缩后）
   attachmentUrl  String?
   /// 文档原始文件名
   attachmentName String?
   /// ISO 字符串
   at     String
   read   Boolean @default(false)
+  /// 编辑过则为最后编辑 ISO（UI 显示「已编辑」）
+  editedAt   String?
+  /// 软删除：保留行占位「此消息已删除」
+  deleted    Boolean @default(false)
+  /// 引用的消息 id（同表自引用）
+  replyToId  String?
+  /// 变更游标：轮询用 updatedAt>since 取变更行
+  updatedAt  String?
   from   User    @relation("MsgFrom", fields: [fromId], references: [id], onDelete: Cascade)
   to     User    @relation("MsgTo", fields: [toId], references: [id], onDelete: Cascade)
+  replyTo Message?  @relation("MsgReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies Message[] @relation("MsgReply")
 
   @@index([fromId, toId, at])
+  @@index([fromId, toId, updatedAt])
 }
 
 model FriendEdge {

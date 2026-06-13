@@ -17,6 +17,7 @@ import {
   createGroup,
   getChannelPage,
   getGroupIncomingSince,
+  getGroupMutationsSince,
   getMyGroups,
   inviteToGroup,
   leaveGroup,
@@ -30,6 +31,7 @@ import {
 } from "@/lib/group-service";
 import {
   getConversationPage,
+  getDmMutationsSince,
   getIncomingSince,
   getUnreadCounts,
   sendMessage,
@@ -38,6 +40,10 @@ import {
   type IncomingMessage,
   type SendInput,
 } from "@/lib/message-service";
+import { deleteMessage, editMessage, toggleReaction, type Scope } from "@/lib/chat-interactions";
+import { getSignals, reportRead, reportTyping, type ReadView, type TypingView } from "@/lib/signal-service";
+import { getVoiceRooms, heartbeatVoiceRooms, joinVoiceRoom, leaveVoiceRoom, setMic, type VoiceRoomSnapshot } from "@/lib/voice-room-service";
+import type { MessageMutation } from "@/components/social/presence";
 import type { Friend } from "@/lib/types";
 
 /** 加载一页会话；beforeIso 为空取最新页，否则取更老的历史页 */
@@ -124,6 +130,10 @@ export interface PollResult {
   now: string;
   messages: IncomingMessage[];
   groupMessages: IncomingGroupMessage[];
+  mutations: { dm: MessageMutation[]; group: MessageMutation[] };
+  typing: TypingView[];
+  reads: ReadView[];
+  voiceRooms: VoiceRoomSnapshot[];
   friends: Friend[];
   groups: GroupSummary[];
   requests: FriendRequestView[];
@@ -136,20 +146,91 @@ export async function loadUnreadCountsAction(): Promise<Record<string, number>> 
 }
 
 /**
- * 轮询：(since, now] 的新私聊/群聊消息 + 最新好友/群组/请求/在线状态 + 本人状态。
- * 顺带刷新本人 lastSeenAt（SPA 停留超 5 分钟不被误判离线）。
- * 上界与游标推进值一致，避免查询期间落库的消息下一轮重复投递。
+ * 轮询：(since, now] 的新消息 + 已有消息变更(编辑/删除/反应)增量 + typing/已读 + 语音房间在场
+ * + 好友/群组/请求/在线状态。openConvKeys = 客户端当前打开的会话(handle / c:<channelId>)，
+ * 用于把 typing/已读/语音房间查询收窄到打开的会话，避免轮询风暴。voiceRoomIds = 当前可见的语音频道。
  */
-export async function pollUpdatesAction(since: string): Promise<PollResult> {
+export async function pollUpdatesAction(since: string, openConvKeys: string[] = [], voiceRoomIds: string[] = []): Promise<PollResult> {
   const now = new Date().toISOString();
-  await touchPresence();
-  const [messages, groupMessages, friends, groups, requests, myPresence] = await Promise.all([
+  await Promise.all([touchPresence(), heartbeatVoiceRooms()]);
+  const [messages, groupMessages, dmMut, groupMut, signals, voiceRooms, friends, groups, requests, myPresence] = await Promise.all([
     getIncomingSince(since, now),
     getGroupIncomingSince(since, now),
+    getDmMutationsSince(since, now),
+    getGroupMutationsSince(since, now),
+    getSignals(openConvKeys),
+    getVoiceRooms(voiceRoomIds),
     getFriendsWithPresence(),
     getMyGroups(),
     getIncomingRequests(),
     getMyPresence(),
   ]);
-  return { now, messages, groupMessages, friends, groups, requests, myPresence };
+  return {
+    now,
+    messages,
+    groupMessages,
+    mutations: { dm: dmMut, group: groupMut },
+    typing: signals.typing,
+    reads: signals.reads,
+    voiceRooms,
+    friends,
+    groups,
+    requests,
+    myPresence,
+  };
+}
+
+// —— 消息交互 ——
+
+export async function toggleReactionAction(scope: Scope, messageId: string, emoji: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await toggleReaction(scope, messageId, emoji);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "操作失败" };
+  }
+}
+
+export async function editMessageAction(scope: Scope, messageId: string, body: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await editMessage(scope, messageId, body);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "编辑失败" };
+  }
+}
+
+export async function deleteMessageAction(scope: Scope, messageId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await deleteMessage(scope, messageId);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "删除失败" };
+  }
+}
+
+// —— typing / 已读 ——
+
+export async function reportTypingAction(convKey: string): Promise<void> {
+  await reportTyping(convKey);
+}
+export async function reportReadAction(convKey: string, lastAt: string): Promise<void> {
+  await reportRead(convKey, lastAt);
+}
+
+// —— 语音房间 ——
+
+export async function joinVoiceRoomAction(roomId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await joinVoiceRoom(roomId);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "加入失败" };
+  }
+}
+export async function leaveVoiceRoomAction(roomId: string): Promise<void> {
+  await leaveVoiceRoom(roomId);
+}
+export async function setMicAction(roomId: string, micOn: boolean): Promise<void> {
+  await setMic(roomId, micOn);
 }

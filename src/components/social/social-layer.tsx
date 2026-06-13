@@ -8,7 +8,11 @@ import {
   acceptRequestAction,
   addFriendAction,
   createGroupAction,
+  deleteMessageAction,
+  editMessageAction,
   inviteToGroupAction,
+  joinVoiceRoomAction,
+  leaveVoiceRoomAction,
   loadChannelAction,
   loadConversationAction,
   loadUnreadCountsAction,
@@ -16,9 +20,13 @@ import {
   refreshGroupsAction,
   refreshSocialAction,
   removeFriendAction,
+  reportReadAction,
+  reportTypingAction,
   sendGroupMessageAction,
   sendMessageAction,
+  setMicAction,
   setRemarkAction,
+  toggleReactionAction,
 } from "@/app/friends-actions";
 import { cn } from "@/lib/cn";
 import type { FriendRequestView } from "@/lib/friends-service";
@@ -27,10 +35,12 @@ import type { ChatMessage } from "@/lib/message-service";
 import type { Friend } from "@/lib/types";
 import { AgentModal, ConnectorCommandModal, PersonaModal } from "./agent-modal";
 import { channelConvKey, channelIdOf, ChatWindow, groupIdOf, groupKey, isChannelConvKey, isGroupKey, type SendPayload } from "./chat-window";
+import type { VoiceRoomSnapshot } from "@/lib/voice-room-service";
+import type { MessageMutation } from "./presence";
 import { AddFriendView, FriendsPanel, type Me } from "./friends-panel";
 import { GroupModal } from "./group-modal";
 import { MiniProfileLayer } from "./mini-profile";
-import { display, type Conversation, type MsgSender, type ViewMessage } from "./presence";
+import { display, replyExcerpt, type Conversation, type MsgSender, type ViewMessage } from "./presence";
 
 export type { Me };
 
@@ -87,6 +97,16 @@ export function SocialLayer({
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [restored, setRestored] = useState(false);
+  /** convKey → 正在输入的人 */
+  const [typing, setTyping] = useState<Record<string, { handle: string; name: string }[]>>({});
+  /** convKey(DM) → 对方已读到的消息时刻 */
+  const [reads, setReads] = useState<Record<string, string>>({});
+  /** roomId(语音频道) → 在场成员 */
+  const [voiceRooms, setVoiceRooms] = useState<Record<string, VoiceRoomSnapshot["members"]>>({});
+  /** 我当前加入的语音房间 id */
+  const [myVoiceRoom, setMyVoiceRoom] = useState<string | null>(null);
+  const myVoiceRoomRef = useRef<string | null>(null);
+  myVoiceRoomRef.current = myVoiceRoom;
 
   const activeChatRef = useRef<string | null>(null);
   activeChatRef.current = activeChat;
@@ -102,8 +122,52 @@ export function SocialLayer({
   mutedRef.current = mutedGroups;
   const markersRef = useRef(markers);
   markersRef.current = markers;
+  const openChatsRef = useRef(openChats);
+  openChatsRef.current = openChats;
   /** 已被用户看过一次的未读分隔线（再次打开时清除，Steam 行为） */
   const markerSeenRef = useRef<Set<string>>(new Set());
+
+  // —— 通知声（WebAudio，裸 http 可用；浏览器 autoplay 需先有交互） ——
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const soundOnRef = useRef(true);
+  useEffect(() => {
+    try {
+      soundOnRef.current = localStorage.getItem("starport_sound_off") !== "1";
+    } catch {
+      /* ignore */
+    }
+    const mark = () => {
+      try {
+        if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener("pointerdown", mark, { once: true });
+    return () => window.removeEventListener("pointerdown", mark);
+  }, []);
+  const playPing = useCallback(() => {
+    if (!soundOnRef.current) return;
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    try {
+      if (ctx.state === "suspended") void ctx.resume();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.setValueAtTime(1175, now + 0.08);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.18, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+      osc.start(now);
+      osc.stop(now + 0.24);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const meSender: MsgSender = { handle: me.handle, name: me.name, avatarHue: me.avatarHue, avatarUrl: me.avatarUrl };
 
@@ -369,6 +433,35 @@ export function SocialLayer({
     });
   }, []);
 
+  /** 把消息变更（编辑/删除/反应）原地打补丁到已加载消息上 */
+  const patchMessage = useCallback((convKey: string, mut: MessageMutation) => {
+    setConversations((c) => {
+      const conv = c[convKey];
+      if (!conv) return c;
+      const idx = conv.messages.findIndex((m) => m.id === mut.id);
+      if (idx === -1) return c;
+      const cur = conv.messages[idx];
+      // 幂等护栏：本地已是更新的态就跳过（防乱序/重复 poll 覆盖乐观更新）
+      if (cur.updatedAt && mut.updatedAt && cur.updatedAt > mut.updatedAt) return c;
+      const next = conv.messages.slice();
+      next[idx] = { ...cur, body: mut.body, editedAt: mut.editedAt, deleted: mut.deleted, reactions: mut.reactions, updatedAt: mut.updatedAt };
+      return { ...c, [convKey]: { ...conv, messages: next } };
+    });
+  }, []);
+
+  /** 乐观地本地改一条消息（发反应/编辑/删除立即生效） */
+  const optimisticPatch = useCallback((convKey: string, id: string, patch: Partial<ViewMessage>) => {
+    setConversations((c) => {
+      const conv = c[convKey];
+      if (!conv) return c;
+      const idx = conv.messages.findIndex((m) => m.id === id);
+      if (idx === -1) return c;
+      const next = conv.messages.slice();
+      next[idx] = { ...next[idx], ...patch, updatedAt: new Date().toISOString() };
+      return { ...c, [convKey]: { ...conv, messages: next } };
+    });
+  }, []);
+
   const markUnread = useCallback((chatKey: string, convKey: string, msgId: string) => {
     setUnread((u) => ({
       ...u,
@@ -387,14 +480,25 @@ export function SocialLayer({
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
   }, []);
 
-  // —— 轮询：新私聊/群聊消息 + 好友/群组/请求/状态（每 2s） ——
+  // —— 轮询：新消息 + 消息变更 + typing/已读 + 语音房间 + 好友/群组/状态（每 2s） ——
   const sinceRef = useRef<string>(new Date().toISOString());
   useEffect(() => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
       try {
-        const res = await pollUpdatesAction(sinceRef.current);
+        // 收窄查询：只查打开的会话（typing/已读）+ 可见语音频道
+        const openConvKeys: string[] = [];
+        for (const key of openChatsRef.current) {
+          if (isGroupKey(key)) {
+            const g = groupsRef.current.find((x) => x.id === groupIdOf(key));
+            const cid = g ? currentChannelId(g) : null;
+            if (cid) openConvKeys.push(channelConvKey(cid));
+          } else openConvKeys.push(key);
+        }
+        const voiceRoomIds = groupsRef.current.flatMap((g) => g.channels.filter((c) => c.kind === "voice").map((c) => c.id));
+
+        const res = await pollUpdatesAction(sinceRef.current, openConvKeys, voiceRoomIds);
         if (!alive) return;
         sinceRef.current = res.now;
         setFriends(res.friends);
@@ -412,11 +516,15 @@ export function SocialLayer({
             attachmentUrl: m.attachmentUrl,
             attachmentName: m.attachmentName,
             at: m.at,
+            replyTo: m.replyTo,
+            updatedAt: m.updatedAt,
+            reactions: [],
             sender: { handle, name: m.fromName, avatarHue: f?.avatarHue ?? 0, avatarUrl: f?.avatarUrl ?? null, isAgent: f?.isAgent },
           });
           if (activeChatRef.current !== handle) {
             markUnread(handle, handle, m.id);
             pushToast(m.fromName, preview(m.kind, m.body, m.attachmentName), handle);
+            playPing();
           }
         }
 
@@ -424,7 +532,6 @@ export function SocialLayer({
           const chatKey = groupKey(m.groupId);
           const convKey = channelConvKey(m.channelId);
           appendMessage(convKey, m);
-          // 「正在看」的频道判定要与渲染的 fallback 一致（channelSel 缺失时渲染的是第一个文字频道）
           const g = res.groups.find((x) => x.id === m.groupId);
           const sel = channelSelRef.current[m.groupId];
           const effective = sel && g?.channels.some((c) => c.id === sel) ? sel : g?.channels.find((c) => c.kind === "text")?.id;
@@ -433,8 +540,23 @@ export function SocialLayer({
             markUnread(chatKey, convKey, m.id);
             if (!mutedRef.current.has(m.groupId)) {
               pushToast(`${g?.name ?? "群组"} · ${m.sender.name}`, preview(m.kind, m.body, m.attachmentName), chatKey);
+              playPing();
             }
           }
+        }
+
+        // 消息变更（编辑/删除/反应）增量 patch
+        for (const mut of res.mutations.dm) patchMessage(mut.convKey, mut);
+        for (const mut of res.mutations.group) patchMessage(channelConvKey(mut.convKey), mut);
+
+        // typing / 已读 / 语音房间
+        setTyping(Object.fromEntries(res.typing.map((t) => [t.convKey, t.typers])));
+        setReads(Object.fromEntries(res.reads.map((r) => [r.convKey, r.readAt])));
+        setVoiceRooms(Object.fromEntries(res.voiceRooms.map((v) => [v.roomId, v.members])));
+        // 被踢出/掉线兜底：服务端快照里没有我了 → 同步本地 myVoiceRoom
+        if (myVoiceRoomRef.current) {
+          const room = res.voiceRooms.find((v) => v.roomId === myVoiceRoomRef.current);
+          if (!room || !room.members.some((mem) => mem.isMe)) setMyVoiceRoom(null);
         }
       } catch {
         /* 网络抖动 */
@@ -447,7 +569,7 @@ export function SocialLayer({
       alive = false;
       clearTimeout(timer);
     };
-  }, [appendMessage, markUnread, pushToast]);
+  }, [appendMessage, markUnread, patchMessage, pushToast, currentChannelId]);
 
   // 外部页面（如库详情页的「哪些好友在玩」）通过自定义事件触发：双击开聊天 / 右键菜单
   useEffect(() => {
@@ -479,8 +601,13 @@ export function SocialLayer({
     };
   }, [menu]);
 
+  const scopeOf = (convKey: string): "dm" | "group" => (isChannelConvKey(convKey) ? "group" : "dm");
+
   const sendChat = useCallback(
     async (convKey: string, body: string, input?: SendPayload) => {
+      const replyTo = input?.replyToId
+        ? conversationsRef.current[convKey]?.messages.find((m) => m.id === input.replyToId)
+        : undefined;
       const optimistic: ViewMessage = {
         id: `tmp-${Date.now()}-${Math.random()}`,
         kind: input?.kind ?? "text",
@@ -489,6 +616,10 @@ export function SocialLayer({
         attachmentName: input?.attachmentName ?? null,
         at: new Date().toISOString(),
         sender: meSender,
+        reactions: [],
+        replyTo: replyTo
+          ? { id: replyTo.id, senderName: replyTo.sender.name, excerpt: replyExcerpt(replyTo), kind: replyTo.kind }
+          : null,
       };
       setConversations((c) => {
         const prev = c[convKey] ?? { messages: [], hasMore: false };
@@ -496,10 +627,25 @@ export function SocialLayer({
       });
       setMarkers((cur) => (cur[convKey] ? { ...cur, [convKey]: null } : cur));
       markerSeenRef.current.delete(convKey);
-      const payload = input ? { kind: input.kind, attachmentUrl: input.attachmentUrl, attachmentName: input.attachmentName } : undefined;
+      const payload = input ? { kind: input.kind, attachmentUrl: input.attachmentUrl, attachmentName: input.attachmentName, replyToId: input.replyToId } : undefined;
       try {
-        if (isChannelConvKey(convKey)) await sendGroupMessageAction(channelIdOf(convKey), body, payload);
-        else await sendMessageAction(convKey, body, payload);
+        const real = isChannelConvKey(convKey)
+          ? await sendGroupMessageAction(channelIdOf(convKey), body, payload)
+          : await sendMessageAction(convKey, body, payload);
+        // 用真实 id 替换乐观消息（否则自己刚发的消息因 tmp id 无法被反应/编辑/删除）
+        setConversations((c) => {
+          const conv = c[convKey];
+          if (!conv) return c;
+          return {
+            ...c,
+            [convKey]: {
+              ...conv,
+              messages: conv.messages.map((m) =>
+                m.id === optimistic.id ? { ...m, id: real.id, at: real.at, updatedAt: real.updatedAt ?? real.at, replyTo: real.replyTo ?? m.replyTo } : m,
+              ),
+            },
+          };
+        });
       } catch {
         // 发送失败：撤掉乐观消息并提示，别让它冒充已送达
         setConversations((c) =>
@@ -514,6 +660,86 @@ export function SocialLayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [pushToast],
   );
+
+  // —— 消息交互：反应 / 编辑 / 删除（乐观更新 + action 回填，poll 兜底同步对端） ——
+  const reactMessage = useCallback((convKey: string, messageId: string, emoji: string) => {
+    if (messageId.startsWith("tmp-")) return;
+    const conv = conversationsRef.current[convKey];
+    const msg = conv?.messages.find((m) => m.id === messageId);
+    if (!msg) return;
+    const cur = msg.reactions ?? [];
+    const existing = cur.find((r) => r.emoji === emoji);
+    let next: typeof cur;
+    if (existing?.mine) {
+      next = cur.map((r) => (r.emoji === emoji ? { ...r, count: r.count - 1, mine: false } : r)).filter((r) => r.count > 0);
+    } else if (existing) {
+      next = cur.map((r) => (r.emoji === emoji ? { ...r, count: r.count + 1, mine: true } : r));
+    } else {
+      next = [...cur, { emoji, count: 1, mine: true }];
+    }
+    optimisticPatch(convKey, messageId, { reactions: next });
+    void toggleReactionAction(scopeOf(convKey), messageId, emoji);
+  }, [optimisticPatch]);
+
+  const editMsg = useCallback(async (convKey: string, messageId: string, body: string) => {
+    optimisticPatch(convKey, messageId, { body, editedAt: new Date().toISOString() });
+    const res = await editMessageAction(scopeOf(convKey), messageId, body);
+    if (!res.ok) pushToast("编辑失败", res.error ?? "", isChannelConvKey(convKey) ? "" : convKey);
+  }, [optimisticPatch, pushToast]);
+
+  const deleteMsg = useCallback(async (convKey: string, messageId: string) => {
+    optimisticPatch(convKey, messageId, { deleted: true, body: "", attachmentUrl: null, reactions: [] });
+    await deleteMessageAction(scopeOf(convKey), messageId);
+  }, [optimisticPatch]);
+
+  // —— typing 上报（节流 3s/会话） ——
+  const lastTypingRef = useRef<Record<string, number>>({});
+  const reportTyping = useCallback((convKey: string) => {
+    const now = Date.now();
+    if (now - (lastTypingRef.current[convKey] ?? 0) < 3000) return;
+    lastTypingRef.current[convKey] = now;
+    void reportTypingAction(convKey);
+  }, []);
+
+  // —— 已读上报（节流 2s/会话） ——
+  const lastReadRef = useRef<Record<string, number>>({});
+  const reportRead = useCallback((convKey: string) => {
+    const conv = conversationsRef.current[convKey];
+    const last = conv?.messages.filter((m) => m.sender.handle !== me.handle).slice(-1)[0];
+    if (!last) return;
+    const now = Date.now();
+    if (now - (lastReadRef.current[convKey] ?? 0) < 2000) return;
+    lastReadRef.current[convKey] = now;
+    void reportReadAction(convKey, last.at);
+  }, [me.handle]);
+
+  // —— 语音房间 ——
+  const joinVoice = useCallback(async (roomId: string) => {
+    const res = await joinVoiceRoomAction(roomId);
+    if (res.ok) setMyVoiceRoom(roomId);
+    else pushToast("加入失败", res.error ?? "", "");
+  }, [pushToast]);
+  const leaveVoice = useCallback(async (roomId: string) => {
+    setMyVoiceRoom((cur) => (cur === roomId ? null : cur));
+    await leaveVoiceRoomAction(roomId);
+  }, []);
+  const toggleMyMic = useCallback(async (roomId: string, micOn: boolean) => {
+    setVoiceRooms((rooms) => {
+      const members = rooms[roomId];
+      if (!members) return rooms;
+      return { ...rooms, [roomId]: members.map((m) => (m.isMe ? { ...m, micOn } : m)) };
+    });
+    await setMicAction(roomId, micOn);
+  }, []);
+
+  // 关页面前主动离开语音房间（best-effort）
+  useEffect(() => {
+    const onUnload = () => {
+      if (myVoiceRoomRef.current) void leaveVoiceRoomAction(myVoiceRoomRef.current);
+    };
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
+  }, []);
 
   const toggleMute = useCallback((groupId: string) => {
     setMutedGroups((cur) => {
@@ -554,6 +780,10 @@ export function SocialLayer({
         markers={markers}
         channelSel={channelSel}
         mutedGroups={mutedGroups}
+        typing={typing}
+        reads={reads}
+        voiceRooms={voiceRooms}
+        myVoiceRoom={myVoiceRoom}
         onActivate={activateKey}
         onCloseTab={closeChat}
         onCloseWindow={closeWindow}
@@ -564,6 +794,14 @@ export function SocialLayer({
         onToggleMute={toggleMute}
         onOpenChat={openChat}
         onGroupsChanged={refreshGroups}
+        onReact={reactMessage}
+        onEdit={editMsg}
+        onDelete={deleteMsg}
+        onTyping={reportTyping}
+        onRead={reportRead}
+        onJoinVoice={joinVoice}
+        onLeaveVoice={leaveVoice}
+        onToggleMic={toggleMyMic}
       />
 
       <div className="fixed right-4 bottom-4 z-50 flex flex-col items-end gap-2">

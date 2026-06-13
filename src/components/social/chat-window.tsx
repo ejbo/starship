@@ -1,23 +1,35 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowDown,
   Bell,
   BellOff,
   Bot,
+  Check,
   ChevronsRight,
+  Copy,
+  CornerUpLeft,
   Download,
   FileText,
   Hash,
+  Headphones,
   LogOut,
   Mic,
+  MicOff,
   Paperclip,
   Pencil,
+  Phone,
+  PhoneOff,
+  Play,
   Plus,
   Search,
   Send,
   Settings,
   Smile,
+  SmilePlus,
+  Square,
+  Trash2,
   UserPlus,
   Volume2,
   X,
@@ -25,22 +37,32 @@ import {
 import { Avatar } from "@/components/ui/avatar";
 import { Markdown } from "@/components/ui/markdown";
 import { createChannelAction, leaveGroupAction, renameGroupAction } from "@/app/friends-actions";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 import type { GroupMember, GroupSummary } from "@/lib/group-service";
 import type { MessageKind } from "@/lib/message-service";
+import type { VoiceRoomSnapshot } from "@/lib/voice-room-service";
 import type { Friend, PresenceKind } from "@/lib/types";
 import { GroupAvatar, type Me } from "./friends-panel";
+import { EmojiPicker } from "./emoji-picker";
+import { MessageList } from "./message-list";
 import { miniProfileProps } from "./mini-profile";
 import {
+  blobToDataUrl,
+  canRecordVoice,
   display,
   fileToDataUrl,
-  groupByDayAndSender,
+  formatDuration,
+  getSpeechRecognition,
   imageToDataUrl,
   messageTimeLabel,
+  pickAudioMime,
   presenceMeta,
   statusText,
-  EMOJIS,
+  QUICK_REACTIONS,
+  VOICE_NAME_PREFIX,
   type Conversation,
+  type ReplyPreview,
   type ViewMessage,
 } from "./presence";
 
@@ -61,6 +83,7 @@ export interface SendPayload {
   kind: MessageKind;
   attachmentUrl?: string;
   attachmentName?: string;
+  replyToId?: string;
 }
 
 interface ChatWindowProps {
@@ -77,6 +100,14 @@ interface ChatWindowProps {
   /** groupId → 当前选中频道 id */
   channelSel: Record<string, string>;
   mutedGroups: Set<string>;
+  /** convKey → 正在输入的人 */
+  typing: Record<string, { handle: string; name: string }[]>;
+  /** DM convKey → 对方已读到的消息时刻 */
+  reads: Record<string, string>;
+  /** roomId(语音频道) → 在场成员 */
+  voiceRooms: Record<string, VoiceRoomSnapshot["members"]>;
+  /** 我加入的语音房间 id */
+  myVoiceRoom: string | null;
   onActivate: (key: string) => void;
   onCloseTab: (key: string) => void;
   onCloseWindow: () => void;
@@ -88,6 +119,14 @@ interface ChatWindowProps {
   onToggleMute: (groupId: string) => void;
   onOpenChat: (handle: string) => void;
   onGroupsChanged: () => Promise<unknown>;
+  onReact: (convKey: string, messageId: string, emoji: string) => void;
+  onEdit: (convKey: string, messageId: string, body: string) => void;
+  onDelete: (convKey: string, messageId: string) => void;
+  onTyping: (convKey: string) => void;
+  onRead: (convKey: string) => void;
+  onJoinVoice: (roomId: string) => void;
+  onLeaveVoice: (roomId: string) => void;
+  onToggleMic: (roomId: string, micOn: boolean) => void;
 }
 
 export function ChatWindow(props: ChatWindowProps) {
@@ -99,6 +138,12 @@ export function ChatWindow(props: ChatWindowProps) {
   const [hint, setHint] = useState<string | null>(null);
   const [membersOpen, setMembersOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [replyTargets, setReplyTargets] = useState<Record<string, ReplyPreview & { senderName: string }>>({}); // 每会话的回复目标
+  const [showScrollDown, setShowScrollDown] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordSec, setRecordSec] = useState(0);
+  const dragCounter = useRef(0);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 720, h: 520 });
   const posRef = useRef(pos);
@@ -114,6 +159,15 @@ export function ChatWindow(props: ChatWindowProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 录音相关 ref（必须在早退 return 之前声明，保持 hooks 顺序稳定）
+  const recRef = useRef<MediaRecorder | null>(null);
+  const recChunksRef = useRef<Blob[]>([]);
+  const recStreamRef = useRef<MediaStream | null>(null);
+  const recStartRef = useRef(0);
+  const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const speechRef = useRef<{ stop: () => void } | null>(null);
+  const transcriptRef = useRef("");
+  const cancelRef = useRef(false);
 
   const flashHint = (text: string) => {
     setHint(text);
@@ -139,22 +193,6 @@ export function ChatWindow(props: ChatWindowProps) {
   const setDraft = (v: string) => {
     if (convKey) setDrafts((d) => ({ ...d, [convKey]: v }));
   };
-
-  /** 名字着色：按发送者实时状态（Steam 同款） */
-  const toneOf = (handle: string): string => {
-    let kind: PresenceKind | undefined;
-    if (handle === me.handle) kind = myPresence.kind === "offline" ? "online" : myPresence.kind;
-    else kind = friendOf(handle)?.presence.kind ?? activeGroup?.members.find((m) => m.handle === handle)?.presence.kind;
-    return presenceMeta[kind ?? "offline"].tone;
-  };
-  const nameOf = (sender: ViewMessage["sender"]): string => {
-    if (sender.handle === me.handle) return me.name;
-    const f = friendOf(sender.handle);
-    return f ? display(f) : sender.name;
-  };
-  /** 悬停卡数据：好友 > 群成员 > 消息携带的兜底信息 */
-  const profileOf = (sender: ViewMessage["sender"]): Friend =>
-    friendOf(sender.handle) ?? activeGroup?.members.find((m) => m.handle === sender.handle) ?? fallbackFriend(sender);
 
   // 输入框随行数增高，到上限（128px）后内部滚动
   const autoGrow = () => {
@@ -193,12 +231,21 @@ export function ChatWindow(props: ChatWindowProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 切换会话/频道 → 滚到底 + 输入框高度按该会话草稿重算
+  // 切换会话/频道 → 滚到底 + 输入框高度按该会话草稿重算 + 标记已读
   useEffect(() => {
     atBottomRef.current = true;
+    setShowScrollDown(false);
     requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }));
     autoGrow();
+    if (convKey) props.onRead(convKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convKey]);
+
+  // 在底部时来新消息 → 自动标记已读
+  useEffect(() => {
+    if (convKey && atBottomRef.current) props.onRead(convKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]);
 
   // 消息变化：加载历史时维持位置，否则（在底部时）滚到底
   useLayoutEffect(() => {
@@ -300,7 +347,10 @@ export function ChatWindow(props: ChatWindowProps) {
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el || !convKey) return;
-    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    atBottomRef.current = atBottom;
+    setShowScrollDown(!atBottom);
+    if (atBottom) props.onRead(convKey); // 看到底即已读
     if (el.scrollTop < 60 && conv?.hasMore && !loadingOlderRef.current) {
       loadingOlderRef.current = true;
       prevHeightRef.current = el.scrollHeight;
@@ -315,13 +365,19 @@ export function ChatWindow(props: ChatWindowProps) {
     }
   };
 
+  const scrollToBottom = () => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
+
   const send = () => {
     const body = draft.trim();
     if (!body || !convKey) return;
     setDraft("");
     if (taRef.current) taRef.current.style.height = "auto";
     atBottomRef.current = true;
-    props.onSend(convKey, body);
+    props.onSend(convKey, body, replyTarget ? { kind: "text", replyToId: replyTarget.id } : undefined);
+    setReplyTarget(null);
   };
 
   const sendAttachment = async (file: File) => {
@@ -346,6 +402,110 @@ export function ChatWindow(props: ChatWindowProps) {
     }
   };
 
+  // —— 语音消息录制（+ 浏览器原生边录边转文字） ——
+  const MAX_VOICE_SEC = 120;
+
+  const cleanupRec = () => {
+    if (recTimerRef.current) clearInterval(recTimerRef.current);
+    recTimerRef.current = null;
+    recStreamRef.current?.getTracks().forEach((t) => t.stop());
+    recStreamRef.current = null;
+    try {
+      speechRef.current?.stop();
+    } catch {
+      /* ignore */
+    }
+    speechRef.current = null;
+  };
+
+  const startRecording = async () => {
+    if (!convKey) return;
+    if (!canRecordVoice()) {
+      flashHint(window.isSecureContext ? "此浏览器不支持录音" : "录音需在 HTTPS 环境（联系管理员开启）");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recStreamRef.current = stream;
+      transcriptRef.current = "";
+      cancelRef.current = false;
+      const mime = pickAudioMime();
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 24000 } : undefined);
+      recChunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) recChunksRef.current.push(e.data);
+      };
+      rec.onstop = async () => {
+        const sec = Math.max(1, Math.round((Date.now() - recStartRef.current) / 1000));
+        cleanupRec();
+        setRecording(false);
+        if (cancelRef.current || recChunksRef.current.length === 0) return;
+        const blob = new Blob(recChunksRef.current, { type: mime || "audio/webm" });
+        if (blob.size > 2_900_000) {
+          flashHint("语音过长（超 2MB），请缩短");
+          return;
+        }
+        try {
+          const dataUrl = await blobToDataUrl(blob);
+          atBottomRef.current = true;
+          props.onSend(convKey, transcriptRef.current.trim(), { kind: "voice", attachmentUrl: dataUrl, attachmentName: `${VOICE_NAME_PREFIX}${sec}` });
+        } catch {
+          flashHint("语音处理失败");
+        }
+      };
+      recRef.current = rec;
+      recStartRef.current = Date.now();
+      rec.start();
+      setRecording(true);
+      setRecordSec(0);
+      recTimerRef.current = setInterval(() => {
+        const s = Math.round((Date.now() - recStartRef.current) / 1000);
+        setRecordSec(s);
+        if (s >= MAX_VOICE_SEC) stopRecording(true);
+      }, 250);
+
+      // 边录边转文字（Chrome/Edge；不可用静默跳过）
+      const SR = getSpeechRecognition();
+      if (SR) {
+        try {
+          const r = new (SR as new () => {
+            lang: string;
+            continuous: boolean;
+            interimResults: boolean;
+            onresult: (e: { results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }) => void;
+            start: () => void;
+            stop: () => void;
+          })();
+          r.lang = "zh-CN";
+          r.continuous = true;
+          r.interimResults = false;
+          r.onresult = (e) => {
+            let t = "";
+            for (let i = 0; i < e.results.length; i++) if (e.results[i].isFinal) t += e.results[i][0].transcript;
+            if (t) transcriptRef.current = t;
+          };
+          r.start();
+          speechRef.current = { stop: () => r.stop() };
+        } catch {
+          /* 识别不可用，忽略 */
+        }
+      }
+    } catch {
+      cleanupRec();
+      flashHint("无法访问麦克风");
+    }
+  };
+
+  const stopRecording = (sendIt: boolean) => {
+    cancelRef.current = !sendIt;
+    try {
+      recRef.current?.stop();
+    } catch {
+      cleanupRec();
+      setRecording(false);
+    }
+  };
+
   // 粘贴图片直接发送
   const onPaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -363,8 +523,26 @@ export function ChatWindow(props: ChatWindowProps) {
   };
 
   const marker = convKey ? markers[convKey] : null;
-  const grouped = groupByDayAndSender(messages, marker);
   const cornerCls = "absolute z-10 size-3.5";
+  const replyTarget = convKey ? replyTargets[convKey] : undefined;
+  const setReplyTarget = (t: (ReplyPreview & { senderName: string }) | null) => {
+    if (!convKey) return;
+    setReplyTargets((cur) => {
+      const next = { ...cur };
+      if (t) next[convKey] = t;
+      else delete next[convKey];
+      return next;
+    });
+  };
+
+  const jumpTo = (id: string) => {
+    const el = scrollRef.current?.querySelector(`[data-mid="${id}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-accent/40", "rounded-md");
+      setTimeout(() => el.classList.remove("ring-2", "ring-accent/40", "rounded-md"), 1400);
+    }
+  };
 
   // —— 群聊 @ 自动补全（输入 @ 弹出成员候选，agents 优先；Enter/Tab/点击插入） ——
   const mentionMatch = activeGroup ? /@([^\s@]*)$/.exec(draft) : null;
@@ -388,60 +566,46 @@ export function ChatWindow(props: ChatWindowProps) {
 
   const placeholder = activeFriend ? `发消息给 ${display(activeFriend)}` : activeGroup ? `发消息到 #${activeGroup.channels.find((c) => c.id === activeChannelId)?.name ?? ""}` : "";
 
+  const typers = convKey ? props.typing[convKey] ?? [] : [];
+  const peerReadAt = activeFriend && convKey ? props.reads[convKey] ?? null : null;
+
   const messageArea = (
     <div ref={scrollRef} onScroll={onScroll} className="relative grow space-y-1 overflow-y-auto bg-page/40 px-3 py-3">
       {conv?.hasMore && <p className="py-1 text-center text-[10px] text-mute">上滑加载更早的消息…</p>}
       {messages.length === 0 ? (
         <p className="pt-8 text-center text-xs text-mute">{conv?.loaded ? "还没有聊天记录，打个招呼吧" : "加载中…"}</p>
       ) : (
-        grouped.map((bucket) => (
-          <div key={bucket.day} className="space-y-2">
-            <div className="my-2 flex items-center gap-3 text-[11px] text-mute">
-              <span className="h-px grow bg-line" />
-              {bucket.day}
-              <span className="h-px grow bg-line" />
-            </div>
-            {bucket.groups.map((g) => (
-              <div key={g.items[0].id}>
-                {g.markerBefore && (
-                  <div className="my-2 border-t border-dashed border-accent/50" title="以下是新消息" />
-                )}
-                <div className="flex gap-2">
-                  <span {...(g.sender.handle !== me.handle ? miniProfileProps(profileOf(g.sender)) : {})}>
-                    <Avatar name={nameOf(g.sender)} hue={g.sender.avatarHue} src={g.sender.avatarUrl} size="sm" isAgent={g.sender.isAgent} className="mt-0.5" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="flex items-baseline gap-1.5 leading-none">
-                      <span className={cn("text-xs font-semibold", toneOf(g.sender.handle))}>{nameOf(g.sender)}</span>
-                      <span className="text-[10px] text-mute">{messageTimeLabel(g.start)}</span>
-                    </p>
-                    <div className="mt-1 space-y-1">
-                      {g.items.map((m) => (
-                        <MessageBody key={m.id} msg={m} onImage={setLightbox} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ))
+        convKey && (
+          <MessageList
+            messages={messages}
+            me={me}
+            isGroup={activeIsGroup}
+            marker={marker}
+            friends={friends}
+            members={activeGroup?.members ?? []}
+            dmFriend={activeFriend ?? null}
+            peerReadAt={peerReadAt}
+            onImage={setLightbox}
+            onReact={(id, emoji) => props.onReact(convKey, id, emoji)}
+            onReply={(m) => setReplyTarget({ id: m.id, senderName: m.sender.handle === me.handle ? me.name : m.sender.name, excerpt: m.deleted ? "已删除的消息" : m.kind === "voice" ? "[语音]" : m.kind === "image" ? "[图片]" : m.kind === "file" ? "[文件]" : m.body.slice(0, 60), kind: m.kind })}
+            onEditCommit={(id, body) => props.onEdit(convKey, id, body)}
+            onDelete={(id) => props.onDelete(convKey, id)}
+            onJumpTo={jumpTo}
+          />
+        )
       )}
+      {typers.length > 0 && <TypingBubble typers={typers} isGroup={activeIsGroup} />}
     </div>
   );
 
   const inputBar = (
     <div className="relative border-t border-line p-2">
       {emojiOpen && (
-        <div className="absolute bottom-full left-2 z-10 mb-1 grid w-64 grid-cols-8 gap-0.5 rounded-xl border border-line bg-panel p-2 shadow-[0_12px_40px_-12px_rgb(28_36_51/.3)]">
-          {EMOJIS.map((em) => (
-            <button key={em} onClick={() => { setDraft(draft + em); setEmojiOpen(false); taRef.current?.focus(); }} className="rounded p-1 text-lg transition-colors hover:bg-card-hi">
-              {em}
-            </button>
-          ))}
+        <div className="absolute bottom-full left-2 z-10 mb-1">
+          <EmojiPicker onPick={(em) => { setDraft(draft + em); setEmojiOpen(false); taRef.current?.focus(); }} />
         </div>
       )}
-      {hint && <p className="absolute -top-7 left-2 rounded-md bg-ink/80 px-2 py-1 text-[11px] text-white">{hint}</p>}
+      {hint && <p className="absolute -top-7 left-2 z-10 rounded-md bg-ink/80 px-2 py-1 text-[11px] text-white">{hint}</p>}
       {mentionCandidates.length > 0 && (
         <div className="absolute bottom-full left-2 z-10 mb-1 w-60 overflow-hidden rounded-xl border border-line bg-panel py-1 shadow-[0_12px_40px_-12px_rgb(28_36_51/.3)]">
           {mentionCandidates.map((m, i) => (
@@ -458,67 +622,136 @@ export function ChatWindow(props: ChatWindowProps) {
           ))}
         </div>
       )}
-      <div className="flex items-end gap-1.5">
-        <div className="flex grow items-end gap-1.5 rounded-lg border border-line bg-page px-2 py-1 focus-within:border-accent">
-          <textarea
-            ref={taRef}
-            value={draft}
-            rows={1}
-            onChange={(e) => {
-              setDraft(e.target.value);
-              autoGrow();
-            }}
-            onKeyDown={(e) => {
-              // 中文等输入法选词时的 Enter 用于上屏候选，不能当作发送（否则会重复发送/发出拼音）
-              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-              if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
-                if (mentionCandidates.length > 0) {
-                  e.preventDefault();
-                  insertMention(mentionCandidates[0].handle);
-                  return;
-                }
-                if (e.key === "Tab") return;
-                e.preventDefault();
-                send();
-              }
-            }}
-            onPaste={onPaste}
-            placeholder={placeholder}
-            className="max-h-32 grow resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm leading-relaxed focus:outline-none"
-          />
-          <button onClick={send} disabled={!draft.trim()} className="rounded-md p-1.5 text-accent transition-colors hover:bg-card-hi disabled:opacity-35" aria-label="发送" title="发送（Enter）">
-            <Send className="size-4" />
+
+      {/* 回复预览条 */}
+      {replyTarget && (
+        <div className="mb-1.5 flex items-center gap-2 rounded-lg border-l-2 border-accent bg-card-hi/60 px-2.5 py-1.5 text-xs">
+          <CornerUpLeft className="size-3.5 shrink-0 text-accent" />
+          <span className="min-w-0 truncate text-dim">
+            回复 <span className="font-medium text-ink">{replyTarget.senderName}</span>：{replyTarget.excerpt}
+          </span>
+          <button onClick={() => setReplyTarget(null)} className="ml-auto rounded p-0.5 text-mute hover:text-ink" aria-label="取消回复">
+            <X className="size-3.5" />
           </button>
         </div>
-        <button onClick={() => setEmojiOpen((o) => !o)} className="rounded-lg border border-line p-2 text-dim transition-colors hover:bg-card-hi hover:text-ink" title="表情" aria-label="表情">
-          <Smile className="size-4" />
-        </button>
-        <button onClick={() => fileInputRef.current?.click()} className="rounded-lg border border-line p-2 text-dim transition-colors hover:bg-card-hi hover:text-ink" title="发送图片或文件" aria-label="发送图片或文件">
-          <Paperclip className="size-4" />
-        </button>
-        <button onClick={() => flashHint("语音消息暂未开通（原型）")} className="rounded-lg border border-line p-2 text-dim transition-colors hover:bg-card-hi hover:text-ink" title="语音消息" aria-label="语音消息">
-          <Mic className="size-4" />
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) sendAttachment(f);
-            e.target.value = "";
-          }}
-        />
-      </div>
+      )}
+
+      {/* 录音中：整条输入区变为录音控件 */}
+      {recording ? (
+        <div className="flex items-center gap-2 rounded-lg border border-danger/40 bg-danger/5 px-3 py-2">
+          <span className="flex size-2.5 animate-pulse rounded-full bg-danger" />
+          <span className="text-sm text-danger">录音中 {formatDuration(recordSec)}</span>
+          <span className="text-[11px] text-mute">{getSpeechRecognition() ? "· 同步转文字" : ""}</span>
+          <button onClick={() => stopRecording(false)} className="ml-auto rounded-lg border border-line px-2.5 py-1 text-xs text-dim transition-colors hover:bg-card-hi" title="取消">
+            取消
+          </button>
+          <button onClick={() => stopRecording(true)} className="flex items-center gap-1 rounded-lg bg-accent px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-accent-deep">
+            <Send className="size-3" /> 发送
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-end gap-1.5">
+          <div className="flex grow items-end gap-1.5 rounded-lg border border-line bg-page px-2 py-1 focus-within:border-accent">
+            <textarea
+              ref={taRef}
+              value={draft}
+              rows={1}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                autoGrow();
+                if (convKey && e.target.value.trim()) props.onTyping(convKey);
+              }}
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+                  if (mentionCandidates.length > 0) {
+                    e.preventDefault();
+                    insertMention(mentionCandidates[0].handle);
+                    return;
+                  }
+                  if (e.key === "Tab") return;
+                  e.preventDefault();
+                  send();
+                }
+                if (e.key === "Escape" && replyTarget) setReplyTarget(null);
+              }}
+              onPaste={onPaste}
+              placeholder={placeholder}
+              className="max-h-32 grow resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm leading-relaxed focus:outline-none"
+            />
+            <button onClick={send} disabled={!draft.trim()} className="rounded-md p-1.5 text-accent transition-colors hover:bg-card-hi disabled:opacity-35" aria-label="发送" title="发送（Enter）">
+              <Send className="size-4" />
+            </button>
+          </div>
+          <button onClick={() => setEmojiOpen((o) => !o)} className="rounded-lg border border-line p-2 text-dim transition-colors hover:bg-card-hi hover:text-ink" title="表情" aria-label="表情">
+            <Smile className="size-4" />
+          </button>
+          <button onClick={() => fileInputRef.current?.click()} className="rounded-lg border border-line p-2 text-dim transition-colors hover:bg-card-hi hover:text-ink" title="发送图片或文件" aria-label="发送图片或文件">
+            <Paperclip className="size-4" />
+          </button>
+          <button onClick={startRecording} className="rounded-lg border border-line p-2 text-dim transition-colors hover:bg-card-hi hover:text-ink" title="语音消息" aria-label="语音消息">
+            <Mic className="size-4" />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) sendAttachment(f);
+              e.target.value = "";
+            }}
+          />
+        </div>
+      )}
     </div>
   );
+
+  const scrollDownBtn = showScrollDown && (
+    <button
+      onClick={scrollToBottom}
+      className="absolute bottom-3 right-3 z-10 flex size-8 items-center justify-center rounded-full border border-line bg-panel text-dim shadow-md transition-colors hover:text-accent"
+      title="回到底部"
+      aria-label="回到底部"
+    >
+      <ArrowDown className="size-4" />
+    </button>
+  );
+
+  // 拖拽上传：dragCounter 防子元素进出乱触发
+  const onDragEnter = (e: React.DragEvent) => {
+    if (!convKey || !e.dataTransfer?.types.includes("Files")) return;
+    dragCounter.current++;
+    setDragOver(true);
+  };
+  const onDragLeave = () => {
+    dragCounter.current = Math.max(0, dragCounter.current - 1);
+    if (dragCounter.current === 0) setDragOver(false);
+  };
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current = 0;
+    setDragOver(false);
+    if (!convKey) return;
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    files.forEach((f) => void sendAttachment(f));
+  };
 
   return (
     <>
       <div
         className="fixed z-40 flex flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-[0_16px_50px_-12px_rgb(28_36_51/.32)]"
         style={winStyle}
+        onDragEnter={onDragEnter}
+        onDragOver={(e) => convKey && e.dataTransfer?.types.includes("Files") && e.preventDefault()}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
       >
+        {dragOver && (
+          <div className="pointer-events-none absolute inset-0 z-[60] m-2 flex items-center justify-center rounded-xl border-2 border-dashed border-accent bg-accent/10 text-sm font-medium text-accent">
+            松手发送文件
+          </div>
+        )}
         {/* tab 栏（拖动手柄 + 窗口控制） */}
         <div
           onPointerDown={onDragStart}
@@ -583,6 +816,7 @@ export function ChatWindow(props: ChatWindowProps) {
             )}
             <div className="relative flex min-h-0 grow flex-col">
               {messageArea}
+              {scrollDownBtn}
               {/* 右上角：邀请组建群聊（Steam +👤），悬浮不随消息滚动 */}
               <button
                 onClick={() => props.onInvite(null, [activeFriend.handle])}
@@ -627,13 +861,18 @@ export function ChatWindow(props: ChatWindowProps) {
                   group={activeGroup}
                   activeChannelId={activeChannelId}
                   unread={unread}
+                  voiceRooms={props.voiceRooms}
+                  myVoiceRoom={props.myVoiceRoom}
                   onSelect={(cid) => props.onSelectChannel(activeGroup.id, cid)}
-                  onVoiceClick={() => flashHint("语音频道暂未开通（原型）")}
+                  onJoinVoice={props.onJoinVoice}
+                  onLeaveVoice={props.onLeaveVoice}
+                  onToggleMic={props.onToggleMic}
                   onCreated={props.onGroupsChanged}
                 />
               )}
-              <div className="flex min-w-0 grow flex-col border-l border-line">
+              <div className="relative flex min-w-0 grow flex-col border-l border-line">
                 {messageArea}
+                {scrollDownBtn}
                 {inputBar}
               </div>
               {showMembers && (
@@ -664,19 +903,6 @@ export function ChatWindow(props: ChatWindowProps) {
       )}
     </>
   );
-}
-
-/** 群消息发送者已不是好友时，悬停卡的兜底数据 */
-function fallbackFriend(sender: ViewMessage["sender"]): Friend {
-  return {
-    handle: sender.handle,
-    name: sender.name,
-    remark: null,
-    avatarHue: sender.avatarHue,
-    avatarUrl: sender.avatarUrl ?? null,
-    level: 0,
-    presence: { kind: "offline" },
-  };
 }
 
 function ChatTab({
@@ -803,15 +1029,23 @@ function ChannelSidebar({
   group,
   activeChannelId,
   unread,
+  voiceRooms,
+  myVoiceRoom,
   onSelect,
-  onVoiceClick,
+  onJoinVoice,
+  onLeaveVoice,
+  onToggleMic,
   onCreated,
 }: {
   group: GroupSummary;
   activeChannelId: string | null;
   unread: Record<string, number>;
+  voiceRooms: Record<string, VoiceRoomSnapshot["members"]>;
+  myVoiceRoom: string | null;
   onSelect: (channelId: string) => void;
-  onVoiceClick: () => void;
+  onJoinVoice: (roomId: string) => void;
+  onLeaveVoice: (roomId: string) => void;
+  onToggleMic: (roomId: string, micOn: boolean) => void;
   onCreated: () => Promise<unknown>;
 }) {
   const [adding, setAdding] = useState<"text" | "voice" | null>(null);
@@ -883,13 +1117,54 @@ function ChannelSidebar({
       })}
       <div className="px-1">{addRow("text", "添加文字频道")}</div>
       <p className="px-3 pb-1 pt-3 text-[10px] font-semibold tracking-wide text-mute">语音频道</p>
-      {voices.map((c) => (
-        <button key={c.id} onClick={onVoiceClick} className="mx-1 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[13px] text-dim transition-colors hover:bg-card-hi/60" title="语音频道暂未开通（原型）">
-          <Volume2 className="size-3.5 shrink-0 text-mute" />
-          <span className="truncate">{c.name}</span>
-        </button>
-      ))}
+      {voices.map((c) => {
+        const members = voiceRooms[c.id] ?? [];
+        const inThis = myVoiceRoom === c.id;
+        return (
+          <div key={c.id}>
+            <div className="mx-1 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] text-dim">
+              <Volume2 className="size-3.5 shrink-0 text-mute" />
+              <span className="truncate">{c.name}</span>
+              {members.length > 0 && <span className="text-[10px] text-mute">{members.length}</span>}
+              {inThis ? (
+                <button onClick={() => onLeaveVoice(c.id)} className="ml-auto rounded p-0.5 text-danger transition-colors hover:bg-danger/10" title="离开语音房间" aria-label="离开语音">
+                  <PhoneOff className="size-3.5" />
+                </button>
+              ) : (
+                <button onClick={() => onJoinVoice(c.id)} className="ml-auto rounded p-0.5 text-accent transition-colors hover:bg-accent/10" title="加入语音房间" aria-label="加入语音">
+                  <Phone className="size-3.5" />
+                </button>
+              )}
+            </div>
+            {members.length > 0 && (
+              <div className="mb-0.5 ml-5 space-y-0.5">
+                {members.map((mem) => (
+                  <div key={mem.handle} className="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px]">
+                    <span className="relative">
+                      <Avatar name={mem.name} hue={mem.avatarHue} src={mem.avatarUrl} size="xs" />
+                      {mem.speaking && <span className="absolute inset-0 rounded-full ring-2 ring-green" />}
+                    </span>
+                    <span className="min-w-0 truncate text-dim">{mem.isMe ? "我" : mem.name}</span>
+                    {mem.isMe ? (
+                      <button onClick={() => onToggleMic(c.id, !mem.micOn)} className="ml-auto rounded p-0.5 text-mute hover:text-ink" title={mem.micOn ? "静音" : "取消静音"} aria-label="麦克风">
+                        {mem.micOn ? <Mic className="size-3" /> : <MicOff className="size-3 text-danger" />}
+                      </button>
+                    ) : (
+                      !mem.micOn && <MicOff className="ml-auto size-3 shrink-0 text-mute" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
       <div className="px-1">{addRow("voice", "添加语音频道")}</div>
+      {myVoiceRoom && voices.some((c) => c.id === myVoiceRoom) && (
+        <p className="mx-1 mt-1 rounded bg-card-hi px-2 py-1 text-[10px] leading-relaxed text-mute">
+          已加入语音房间（在场同步）。实时语音通话需 HTTPS，后续开放。
+        </p>
+      )}
     </div>
   );
 }
@@ -969,33 +1244,17 @@ function MemberList({ group, me, onOpenChat, onCollapse }: { group: GroupSummary
   );
 }
 
-// ———————————————————— 消息气泡内容 ————————————————————
-function MessageBody({ msg, onImage }: { msg: ViewMessage; onImage: (url: string) => void }) {
-  if (msg.kind === "image" && msg.attachmentUrl) {
-    const url = msg.attachmentUrl;
-    return (
-      <button onClick={() => onImage(url)} className="mt-1 block" title="点击放大">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={url} alt="图片" className="max-h-48 max-w-full cursor-zoom-in rounded-lg border border-line object-cover" />
-      </button>
-    );
-  }
-  if (msg.kind === "file" && msg.attachmentUrl) {
-    return (
-      <a
-        href={msg.attachmentUrl}
-        download={msg.attachmentName ?? "file"}
-        className="mt-1 flex max-w-[12rem] items-center gap-2 rounded-lg border border-line bg-card-hi px-2.5 py-2 text-xs transition-colors hover:border-accent/40"
-      >
-        <FileText className="size-5 shrink-0 text-accent" />
-        <span className="min-w-0 grow truncate">{msg.attachmentName ?? "文件"}</span>
-        <Download className="size-3.5 shrink-0 text-mute" />
-      </a>
-    );
-  }
-  // Agent 的回复按 markdown 渲染（代码块/列表/链接）；人类消息保持纯文本
-  if (msg.sender.isAgent) {
-    return <Markdown content={msg.body} className="max-w-full break-words" />;
-  }
-  return <p className="break-words text-sm leading-relaxed text-ink/90">{msg.body}</p>;
+// —— 正在输入指示（三点跳动） ——
+function TypingBubble({ typers, isGroup }: { typers: { handle: string; name: string }[]; isGroup: boolean }) {
+  const label = isGroup ? `${typers.slice(0, 2).map((t) => t.name).join("、")}${typers.length > 2 ? " 等" : ""} 正在输入` : "正在输入";
+  return (
+    <div className="flex items-center gap-2 px-1 py-1 text-[11px] text-mute">
+      <span className="flex gap-0.5">
+        <span className="size-1.5 animate-bounce rounded-full bg-mute [animation-delay:-0.3s]" />
+        <span className="size-1.5 animate-bounce rounded-full bg-mute [animation-delay:-0.15s]" />
+        <span className="size-1.5 animate-bounce rounded-full bg-mute" />
+      </span>
+      {label}
+    </div>
+  );
 }

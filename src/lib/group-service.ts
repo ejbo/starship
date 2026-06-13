@@ -1,10 +1,12 @@
 import "server-only";
 import { fanoutGroup } from "@/lib/agent-service";
+import { aggregateReactions } from "@/lib/chat-interactions";
 import { prisma } from "@/lib/db";
 import { attachAppIcons, compareFriends, friendIdsOf, friendUserSelect, toFriend } from "@/lib/friends-service";
-import type { MessageKind, SendInput } from "@/lib/message-service";
+import { replyToSelect, toReplyPreview, type MessageKind, type SendInput } from "@/lib/message-service";
 import { getSessionUserId } from "@/lib/session";
 import type { Friend } from "@/lib/types";
+import type { MessageMutation, ReactionAgg, ReplyPreview } from "@/components/social/presence";
 
 export interface GroupChannel {
   id: string;
@@ -37,6 +39,11 @@ export interface GroupChatMessage {
   attachmentName?: string | null;
   at: string;
   sender: { handle: string; name: string; avatarHue: number; avatarUrl: string | null; isAgent?: boolean };
+  editedAt?: string | null;
+  deleted?: boolean;
+  replyTo?: ReplyPreview | null;
+  reactions?: ReactionAgg[];
+  updatedAt?: string | null;
 }
 
 export interface GroupChannelPage {
@@ -199,25 +206,51 @@ export async function createChannel(groupId: string, name: string, kind: "text" 
   return { id: c.id, name: c.name, kind: c.kind as "text" | "voice" };
 }
 
-function toGroupMessage(m: {
+interface GroupRow {
   id: string;
   kind: string;
   body: string;
   attachmentUrl: string | null;
   attachmentName: string | null;
   at: string;
+  editedAt?: string | null;
+  deleted?: boolean;
+  updatedAt?: string | null;
+  replyTo?: { id: string; body: string; kind: string; deleted: boolean; from: { name: string } } | null;
   from: { handle: string; name: string; avatarHue: number; avatarUrl: string | null; kind: string };
-}): GroupChatMessage {
+}
+
+function toGroupMessage(m: GroupRow, reactions: ReactionAgg[] = []): GroupChatMessage {
   return {
     id: m.id,
     kind: m.kind as MessageKind,
-    body: m.body,
-    attachmentUrl: m.attachmentUrl,
+    body: m.deleted ? "" : m.body,
+    attachmentUrl: m.deleted ? null : m.attachmentUrl,
     attachmentName: m.attachmentName,
     at: m.at,
     sender: { handle: m.from.handle, name: m.from.name, avatarHue: m.from.avatarHue, avatarUrl: m.from.avatarUrl, isAgent: m.from.kind === "agent" },
+    editedAt: m.editedAt ?? null,
+    deleted: m.deleted ?? false,
+    replyTo: toReplyPreview(m.replyTo ?? null),
+    reactions,
+    updatedAt: m.updatedAt ?? null,
   };
 }
+
+/** 群消息 select（含交互字段） */
+const groupMsgSelect = {
+  id: true,
+  kind: true,
+  body: true,
+  attachmentUrl: true,
+  attachmentName: true,
+  at: true,
+  editedAt: true,
+  deleted: true,
+  updatedAt: true,
+  replyTo: replyToSelect,
+  from: { select: { handle: true, name: true, avatarHue: true, avatarUrl: true, kind: true } },
+} as const;
 
 /** 频道消息一页（升序 + hasMore），与私聊分页同语义 */
 export async function getChannelPage(channelId: string, beforeIso?: string): Promise<GroupChannelPage> {
@@ -230,18 +263,12 @@ export async function getChannelPage(channelId: string, beforeIso?: string): Pro
     where: { channelId, ...(beforeIso ? { at: { lt: beforeIso } } : {}) },
     orderBy: { at: "desc" },
     take: PAGE_SIZE + 1,
-    select: {
-      id: true,
-      kind: true,
-      body: true,
-      attachmentUrl: true,
-      attachmentName: true,
-      at: true,
-      from: { select: { handle: true, name: true, avatarHue: true, avatarUrl: true, kind: true } },
-    },
+    select: groupMsgSelect,
   });
   const hasMore = rows.length > PAGE_SIZE;
-  return { hasMore, messages: rows.slice(0, PAGE_SIZE).reverse().map(toGroupMessage) };
+  const page = rows.slice(0, PAGE_SIZE).reverse();
+  const reacts = await aggregateReactions("group", page.map((m) => m.id), userId);
+  return { hasMore, messages: page.map((m) => toGroupMessage(m, reacts.get(m.id) ?? [])) };
 }
 
 export async function sendGroupMessage(channelId: string, body: string, input: SendInput = {}): Promise<GroupChatMessage> {
@@ -259,6 +286,7 @@ export async function sendGroupMessage(channelId: string, body: string, input: S
     if (input.attachmentUrl.length > MAX_ATTACHMENT) throw new Error("附件过大（上限约 2MB）");
   }
 
+  const atNow = new Date().toISOString();
   const created = await prisma.groupMessage.create({
     data: {
       groupId: channel.groupId,
@@ -268,17 +296,11 @@ export async function sendGroupMessage(channelId: string, body: string, input: S
       body: clean,
       attachmentUrl: input.attachmentUrl ?? null,
       attachmentName: input.attachmentName ?? null,
-      at: new Date().toISOString(),
+      replyToId: input.replyToId ?? null,
+      at: atNow,
+      updatedAt: atNow,
     },
-    select: {
-      id: true,
-      kind: true,
-      body: true,
-      attachmentUrl: true,
-      attachmentName: true,
-      at: true,
-      from: { select: { handle: true, name: true, avatarHue: true, avatarUrl: true, kind: true } },
-    },
+    select: groupMsgSelect,
   });
   // 群里被 @ 的 agent 成员被唤醒
   const me = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { handle: true, name: true, kind: true } });
@@ -306,17 +328,27 @@ export async function getGroupIncomingSince(sinceIso: string, untilIso: string):
       group: { members: { some: { userId } } },
     },
     orderBy: { at: "asc" },
-    select: {
-      id: true,
-      groupId: true,
-      channelId: true,
-      kind: true,
-      body: true,
-      attachmentUrl: true,
-      attachmentName: true,
-      at: true,
-      from: { select: { handle: true, name: true, avatarHue: true, avatarUrl: true, kind: true } },
-    },
+    select: { ...groupMsgSelect, groupId: true, channelId: true },
   });
   return rows.map((r) => ({ ...toGroupMessage(r), groupId: r.groupId, channelId: r.channelId }));
+}
+
+/** (since, until] 内、我所在群里被编辑/删除/反应变化的消息（轮询增量 patch；convKey=channelId） */
+export async function getGroupMutationsSince(sinceIso: string, untilIso: string): Promise<MessageMutation[]> {
+  const userId = await getSessionUserId();
+  const rows = await prisma.groupMessage.findMany({
+    where: { updatedAt: { gt: sinceIso, lte: untilIso }, group: { members: { some: { userId } } } },
+    select: { id: true, channelId: true, body: true, editedAt: true, deleted: true, updatedAt: true },
+  });
+  if (rows.length === 0) return [];
+  const reacts = await aggregateReactions("group", rows.map((r) => r.id), userId);
+  return rows.map((r) => ({
+    id: r.id,
+    convKey: r.channelId,
+    body: r.deleted ? "" : r.body,
+    editedAt: r.editedAt,
+    deleted: r.deleted,
+    reactions: reacts.get(r.id) ?? [],
+    updatedAt: r.updatedAt ?? r.id,
+  }));
 }

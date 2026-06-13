@@ -1,9 +1,11 @@
 import "server-only";
 import { fanoutDm } from "@/lib/agent-service";
+import { aggregateReactions } from "@/lib/chat-interactions";
 import { prisma } from "@/lib/db";
 import { getSessionUserId } from "@/lib/session";
+import type { MessageMutation, ReactionAgg, ReplyPreview } from "@/components/social/presence";
 
-export type MessageKind = "text" | "image" | "file";
+export type MessageKind = "text" | "image" | "file" | "voice";
 
 export interface ChatMessage {
   id: string;
@@ -13,6 +15,30 @@ export interface ChatMessage {
   attachmentUrl?: string | null;
   attachmentName?: string | null;
   at: string;
+  editedAt?: string | null;
+  deleted?: boolean;
+  replyTo?: ReplyPreview | null;
+  reactions?: ReactionAgg[];
+  updatedAt?: string | null;
+}
+
+/** replyTo 的最小快照（Prisma include 形状 → ReplyPreview） */
+export const replyToSelect = {
+  select: { id: true, body: true, kind: true, deleted: true, from: { select: { name: true } } },
+} as const;
+
+export function toReplyPreview(r: { id: string; body: string; kind: string; deleted: boolean; from: { name: string } } | null): ReplyPreview | null {
+  if (!r) return null;
+  const excerpt = r.deleted
+    ? "已删除的消息"
+    : r.kind === "image"
+      ? "[图片]"
+      : r.kind === "file"
+        ? "[文件]"
+        : r.kind === "voice"
+          ? "[语音]"
+          : r.body.slice(0, 60);
+  return { id: r.id, senderName: r.from.name, excerpt, kind: r.kind as MessageKind };
 }
 
 export interface ConversationPage {
@@ -30,6 +56,8 @@ export interface IncomingMessage {
   attachmentUrl?: string | null;
   attachmentName?: string | null;
   at: string;
+  replyTo?: ReplyPreview | null;
+  updatedAt?: string | null;
 }
 
 const PAGE_SIZE = 25;
@@ -59,21 +87,30 @@ export async function getConversationPage(handle: string, beforeIso?: string): P
     },
     orderBy: { at: "desc" }, // 先按倒序取最近的
     take: PAGE_SIZE + 1, // 多取一条判断 hasMore
-    select: { id: true, fromId: true, kind: true, body: true, attachmentUrl: true, attachmentName: true, at: true },
+    select: {
+      id: true, fromId: true, kind: true, body: true, attachmentUrl: true, attachmentName: true, at: true,
+      editedAt: true, deleted: true, updatedAt: true, replyTo: replyToSelect,
+    },
   });
 
   const hasMore = rows.length > PAGE_SIZE;
   const page = rows.slice(0, PAGE_SIZE).reverse(); // 截断后翻成升序
+  const reacts = await aggregateReactions("dm", page.map((m) => m.id), userId);
   return {
     hasMore,
     messages: page.map((m) => ({
       id: m.id,
       from: m.fromId === userId ? "me" : "friend",
       kind: m.kind as MessageKind,
-      body: m.body,
-      attachmentUrl: m.attachmentUrl,
+      body: m.deleted ? "" : m.body,
+      attachmentUrl: m.deleted ? null : m.attachmentUrl,
       attachmentName: m.attachmentName,
       at: m.at,
+      editedAt: m.editedAt,
+      deleted: m.deleted,
+      replyTo: toReplyPreview(m.replyTo),
+      reactions: reacts.get(m.id) ?? [],
+      updatedAt: m.updatedAt,
     })),
   };
 }
@@ -82,6 +119,7 @@ export interface SendInput {
   kind?: MessageKind;
   attachmentUrl?: string | null;
   attachmentName?: string | null;
+  replyToId?: string | null;
 }
 
 export async function sendMessage(handle: string, body: string, input: SendInput = {}): Promise<ChatMessage> {
@@ -106,9 +144,11 @@ export async function sendMessage(handle: string, body: string, input: SendInput
       kind,
       attachmentUrl: input.attachmentUrl ?? null,
       attachmentName: input.attachmentName ?? null,
+      replyToId: input.replyToId ?? null,
       at,
+      updatedAt: at,
     },
-    select: { id: true },
+    select: { id: true, replyTo: replyToSelect },
   });
   // 对方是 agent 时唤醒它（本地 → 入队给连接器；托管 → 平台生成回复）
   const me = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { handle: true, name: true, kind: true } });
@@ -130,6 +170,9 @@ export async function sendMessage(handle: string, body: string, input: SendInput
     attachmentUrl: input.attachmentUrl ?? null,
     attachmentName: input.attachmentName ?? null,
     at,
+    replyTo: toReplyPreview(created.replyTo),
+    reactions: [],
+    updatedAt: at,
   };
 }
 
@@ -171,6 +214,8 @@ export async function getIncomingSince(sinceIso: string, untilIso: string): Prom
       attachmentUrl: true,
       attachmentName: true,
       at: true,
+      updatedAt: true,
+      replyTo: replyToSelect,
       from: { select: { handle: true, name: true } },
     },
   });
@@ -183,5 +228,30 @@ export async function getIncomingSince(sinceIso: string, untilIso: string): Prom
     attachmentUrl: r.attachmentUrl,
     attachmentName: r.attachmentName,
     at: r.at,
+    replyTo: toReplyPreview(r.replyTo),
+    updatedAt: r.updatedAt,
+  }));
+}
+
+/** (since, until] 内、我参与的私聊里被编辑/删除/反应变化的消息（轮询增量 patch 用） */
+export async function getDmMutationsSince(sinceIso: string, untilIso: string): Promise<MessageMutation[]> {
+  const userId = await getSessionUserId();
+  const rows = await prisma.message.findMany({
+    where: { OR: [{ fromId: userId }, { toId: userId }], updatedAt: { gt: sinceIso, lte: untilIso } },
+    select: {
+      id: true, fromId: true, body: true, editedAt: true, deleted: true, updatedAt: true,
+      from: { select: { handle: true } }, to: { select: { handle: true } },
+    },
+  });
+  if (rows.length === 0) return [];
+  const reacts = await aggregateReactions("dm", rows.map((r) => r.id), userId);
+  return rows.map((r) => ({
+    id: r.id,
+    convKey: r.fromId === userId ? r.to.handle : r.from.handle,
+    body: r.deleted ? "" : r.body,
+    editedAt: r.editedAt,
+    deleted: r.deleted,
+    reactions: reacts.get(r.id) ?? [],
+    updatedAt: r.updatedAt ?? r.id,
   }));
 }
