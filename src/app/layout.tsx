@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { SocialLayer } from "@/components/social/social-layer";
 import { GlobalNav } from "@/components/global-nav";
 import { SiteFooter } from "@/components/site-footer";
@@ -17,6 +18,16 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // 桌面壳「Shift+Tab 覆盖层」：/overlay 走无外壳 + 透明底，只渲染社交本体（外壳/dim 由覆盖层页面自管）。
+  const isOverlay = ((await headers()).get("x-pathname") ?? "").startsWith("/overlay");
+  if (isOverlay) {
+    return (
+      <html lang="zh-CN">
+        <body className="antialiased bg-transparent">{children}</body>
+      </html>
+    );
+  }
+
   const user = await getCurrentUser();
   if (user) await touchPresence();
   const [friends, requests, myCode, unread, myPresence, groups, wishCount] = user
