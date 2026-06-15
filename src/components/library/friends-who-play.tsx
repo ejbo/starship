@@ -33,7 +33,6 @@ function Row({ fp, sub, subTone }: { fp: FriendPlay; sub: string; subTone?: stri
     <button
       onDoubleClick={() => openChat(f.handle)}
       onContextMenu={(e) => openMenu(e, f)}
-      title="双击发消息 · 右键更多"
       className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-card-hi"
     >
       <span className="relative shrink-0">
@@ -94,7 +93,6 @@ export function FriendsWhoPlay({ slug, friends }: { slug: string; friends: Frien
           )}
         </>
       )}
-      <p className="border-t border-line pt-2.5 text-[11px] text-mute">双击好友发消息 · 右键更多选项</p>
     </aside>
   );
 }

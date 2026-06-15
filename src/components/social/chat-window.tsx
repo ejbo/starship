@@ -1190,7 +1190,6 @@ function MemberRow({ m, me, onOpenChat }: { m: GroupMember; me: Me; onOpenChat: 
       }}
       {...(m.isMe ? {} : miniProfileProps(m))}
       className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-card-hi"
-      title={m.isMe ? "我" : m.isFriend ? "双击聊天 · 右键更多" : "单击查看主页"}
     >
       <span className="relative shrink-0">
         <Avatar name={display(m)} hue={m.avatarHue} src={m.avatarUrl} size="sm" className={cn(offline && "opacity-45")} />

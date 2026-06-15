@@ -67,6 +67,8 @@ model User {
   agentTokenEnc  String?
   /// 连接器最近拉取时间（本地 agent 的在线判定）
   agentLastPollAt String?
+  /// agent 可调设置（JSON）：provider/model/contextMsgs/maxHops/rateLimit/allowAgentMention/dmAutoReply/groupProactive/fullAuto/isolate
+  agentSettings   Json?
   library      LibraryEntry[]
   wishlist     WishlistEntry[]
   creditTxns   CreditTransaction[]

@@ -106,18 +106,21 @@ export function MiniProfileCard({ friend }: { friend: Friend }) {
 /** 全局唯一的悬停层：监听 miniProfileProps 派发的事件，定位在好友行旁边 */
 export function MiniProfileLayer() {
   const [shown, setShown] = useState<{ friend: Friend; x: number; y: number } | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const onEvent = (e: Event) => {
       const detail = (e as CustomEvent<ShowDetail | null>).detail;
-      if (timerRef.current) clearTimeout(timerRef.current);
+      if (showTimer.current) clearTimeout(showTimer.current);
+      if (closeTimer.current) clearTimeout(closeTimer.current);
       if (!detail) {
-        setShown(null);
+        // 离开好友行：留出时间让鼠标移到卡片上（移上去会取消关闭），方便选中/复制卡内内容
+        closeTimer.current = setTimeout(() => setShown(null), 260);
         return;
       }
       const { friend, rect } = detail;
-      timerRef.current = setTimeout(() => {
+      showTimer.current = setTimeout(() => {
         // 优先放行的左侧（社交坞贴右边缘），放不下再换右侧
         let x = rect.left - CARD_W - 12;
         if (x < 8) x = Math.min(rect.right + 12, window.innerWidth - CARD_W - 8);
@@ -128,7 +131,8 @@ export function MiniProfileLayer() {
     window.addEventListener(EVENT, onEvent);
     return () => {
       window.removeEventListener(EVENT, onEvent);
-      if (timerRef.current) clearTimeout(timerRef.current);
+      if (showTimer.current) clearTimeout(showTimer.current);
+      if (closeTimer.current) clearTimeout(closeTimer.current);
     };
   }, []);
 
@@ -141,7 +145,12 @@ export function MiniProfileLayer() {
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.14, ease: "easeOut" }}
-          className="pointer-events-none fixed z-[65]"
+          // 卡片可交互（可选中/复制其中内容）；移入则保持显示，移出才关闭
+          onMouseEnter={() => {
+            if (closeTimer.current) clearTimeout(closeTimer.current);
+          }}
+          onMouseLeave={() => setShown(null)}
+          className="fixed z-[65] select-text"
           style={{ left: shown.x, top: shown.y }}
         >
           <MiniProfileCard friend={shown.friend} />

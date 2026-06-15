@@ -11,6 +11,9 @@ const PLATFORM_KEY_ENV: Record<string, string> = {
   openai: "STARPORT_GW_OPENAI_KEY",
   google: "STARPORT_GW_GOOGLE_KEY",
   xai: "STARPORT_GW_XAI_KEY",
+  deepseek: "STARPORT_GW_DEEPSEEK_KEY",
+  zhipu: "STARPORT_GW_ZHIPU_KEY",
+  qwen: "STARPORT_GW_QWEN_KEY",
 };
 function platformKeyFor(provider: string): string | null {
   const v = process.env[PLATFORM_KEY_ENV[provider] ?? ""];
@@ -49,6 +52,9 @@ const PRICE_PER_1K: Record<string, { in: number; out: number }> = {
   openai: { in: 0.015, out: 0.06 },
   google: { in: 0.0125, out: 0.05 },
   xai: { in: 0.03, out: 0.15 },
+  deepseek: { in: 0.004, out: 0.011 },
+  zhipu: { in: 0.005, out: 0.02 },
+  qwen: { in: 0.006, out: 0.018 },
 };
 
 function today(): string {

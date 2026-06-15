@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Bot, Copy, KeyRound, MessageSquare, Store, Terminal, Trash2, UserMinus, Users } from "lucide-react";
-import { deleteAgentAction, getAgentCommandAction, resetAgentTokenAction, updateAgentPersonaAction, type ConnectorCommand } from "@/app/agents-actions";
+import { deleteAgentAction, getAgentCommandAction, resetAgentTokenAction, type ConnectorCommand } from "@/app/agents-actions";
 import {
   addFriendAction,
   createGroupAction,
@@ -35,7 +35,7 @@ import type { FriendRequestView } from "@/lib/friends-service";
 import type { GroupSummary } from "@/lib/group-service";
 import type { ChatMessage } from "@/lib/message-service";
 import type { Friend } from "@/lib/types";
-import { AgentModal, ConnectorCommandModal, PersonaModal } from "./agent-modal";
+import { AgentModal, AgentSettingsModal, ConnectorCommandModal } from "./agent-modal";
 import { channelConvKey, channelIdOf, ChatWindow, groupIdOf, groupKey, isChannelConvKey, isGroupKey, type SendPayload } from "./chat-window";
 import type { VoiceRoomSnapshot } from "@/lib/voice-room-service";
 import type { MessageMutation } from "./presence";
@@ -62,7 +62,7 @@ type ModalState =
   | { mode: "invite"; groupId: string }
   | { mode: "agent-create" }
   | { mode: "agent-command"; command: ConnectorCommand; title?: string }
-  | { mode: "agent-persona"; friend: Friend };
+  | { mode: "agent-settings"; friend: Friend };
 
 const preview = (kind: string, body: string, attachmentName?: string | null) =>
   kind === "image" ? "[图片]" : kind === "file" ? `[文件] ${attachmentName ?? ""}` : body;
@@ -942,16 +942,8 @@ export function SocialLayer({
         <AgentModal onClose={() => setModal(null)} onCreated={refresh} onOpenChat={openChat} />
       )}
       {modal?.mode === "agent-command" && <ConnectorCommandModal command={modal.command} title={modal.title} onClose={() => setModal(null)} />}
-      {modal?.mode === "agent-persona" && (
-        <PersonaModal
-          name={modal.friend.name}
-          initial={modal.friend.persona ?? ""}
-          onSave={async (persona) => {
-            await updateAgentPersonaAction(modal.friend.handle, persona);
-            await refresh();
-          }}
-          onClose={() => setModal(null)}
-        />
+      {modal?.mode === "agent-settings" && (
+        <AgentSettingsModal handle={modal.friend.handle} onSaved={refresh} onClose={() => setModal(null)} />
       )}
 
       {menu && (
@@ -993,7 +985,7 @@ export function SocialLayer({
             const res = await resetAgentTokenAction(f.handle, f.agentKind ?? "local-claude");
             if (res.ok && res.command) setModal({ mode: "agent-command", command: res.command, title: `${f.name} · 令牌已重置` });
           }}
-          onAgentPersona={() => setModal({ mode: "agent-persona", friend: menu.friend })}
+          onAgentSettings={() => setModal({ mode: "agent-settings", friend: menu.friend })}
           onAgentDelete={async () => {
             if (window.confirm(`确定删除 Agent「${menu.friend.name}」？聊天记录会一并清除。`)) {
               await deleteAgentAction(menu.friend.handle);
@@ -1017,7 +1009,7 @@ function FriendContextMenu({
   onRemove,
   onAgentGetCommand,
   onAgentReset,
-  onAgentPersona,
+  onAgentSettings,
   onAgentDelete,
 }: {
   state: ContextMenuState;
@@ -1028,7 +1020,7 @@ function FriendContextMenu({
   onRemove: () => void;
   onAgentGetCommand: () => void;
   onAgentReset: () => void;
-  onAgentPersona: () => void;
+  onAgentSettings: () => void;
   onAgentDelete: () => void;
 }) {
   const usingApp = state.friend.presence.kind === "using" ? state.friend.presence.appSlug : undefined;
@@ -1036,7 +1028,7 @@ function FriendContextMenu({
     ? [
         { label: "发消息", icon: MessageSquare, run: onMessage },
         { label: "邀请到群组聊天", icon: Users, run: onInviteToGroup },
-        { label: "编辑人设", icon: Bot, run: onAgentPersona },
+        { label: "Agent 设置", icon: Bot, run: onAgentSettings },
         ...(state.friend.agentKind !== "hosted"
           ? [
               { label: "连接 / 重启命令", icon: Terminal, run: onAgentGetCommand },

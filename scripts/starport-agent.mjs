@@ -7,7 +7,7 @@
  * 用法（创建 Agent 时平台会生成带令牌的完整命令）：
  *   node starport-agent.mjs --url https://平台地址 --token spa_xxx
  * 可选：
- *   --backend claude|codex   默认 claude
+ *   --backend claude|codex|gemini|qwen   默认 claude（gemini/qwen 上下文走工作目录文件，无显式会话续接）
  *   --dir <工作目录>          默认 ./starport-agents/<handle>（agent 的记忆/文件都在这）
  *   --full-auto              放开全部工具权限（claude: --dangerously-skip-permissions）
  *   --isolate                每个 agent 独立 config 沙箱（全局设置/记忆/登录都隔离，
@@ -53,12 +53,38 @@ const api = async (path, init = {}) => {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`${path} -> HTTP ${res.status} ${text.slice(0, 200)}`);
+    const err = new Error(`${path} -> HTTP ${res.status} ${text.slice(0, 200)}`);
+    err.status = res.status; // 让调用方区分鉴权失败(401/403)与网络抖动
+    throw err;
   }
   return res.json();
 };
 
 const log = (...xs) => console.log(new Date().toISOString().slice(11, 19), ...xs);
+
+/**
+ * 令牌失效（Agent 被删或令牌重置）时自清并退出：
+ * - 删掉自己的 pm2 常驻进程（pm2 把进程名写进 process.env.name），避免它把 401 死循环重启起来；
+ * - 打印本地记忆目录的清理命令（不自动 rm：401 无法区分「删除」与「重置」，重置后该目录要被新连接器复用，误删会丢记忆）。
+ */
+async function selfCleanAndExit(reason) {
+  log(reason);
+  const pmName = process.env.name; // pm2 运行时为 agent-<handle>
+  if (pmName) {
+    log(`移除常驻进程 → pm2 delete ${pmName}`);
+    await new Promise((r) => {
+      try {
+        const c = spawn("pm2", ["delete", pmName], { stdio: "ignore" });
+        c.on("close", r);
+        c.on("error", r);
+      } catch {
+        r();
+      }
+    });
+  }
+  if (DIR) log(`如需清理该 Agent 的本地记忆/文件，手动执行：rm -rf ${DIR}`);
+  process.exit(0);
+}
 
 // —— 会话映射（convKey → 本地 CLI session id） ——
 let DIR = opt("dir");
@@ -161,6 +187,24 @@ async function runCodex(prompt, convKey) {
   return text.trim();
 }
 
+/** Gemini CLI：gemini（提示词走 stdin，非交互直出文本；上下文/记忆靠工作目录 GEMINI.md + 文件） */
+async function runGemini(prompt) {
+  const argv = [];
+  if (FULL_AUTO) argv.push("--yolo");
+  if (MODEL) argv.push("-m", MODEL);
+  const out = await run("gemini", argv, prompt, DIR);
+  return out.trim();
+}
+
+/** Qwen Code CLI：qwen（gemini-cli 同源 fork，用法一致；上下文靠 QWEN.md + 文件） */
+async function runQwen(prompt) {
+  const argv = [];
+  if (FULL_AUTO) argv.push("--yolo");
+  if (MODEL) argv.push("-m", MODEL);
+  const out = await run("qwen", argv, prompt, DIR);
+  return out.trim();
+}
+
 function buildPrompt(agent, task) {
   const lines = [];
   if (task.kind === "group") {
@@ -190,7 +234,14 @@ function buildPrompt(agent, task) {
 // —— 主循环 ——
 const main = async () => {
   // 取身份（带 wait=0 的一次收件，顺带验证令牌）
-  const first = await api("/api/v1/agent/inbox?wait=0");
+  let first;
+  try {
+    first = await api("/api/v1/agent/inbox?wait=0");
+  } catch (e) {
+    // 仅 401 = 令牌失效（平台对无效令牌恒返回 401）；403 多来自代理/WAF/限流，属瞬时，交给重试
+    if (e.status === 401) await selfCleanAndExit("✗ 令牌无效：该 Agent 不存在或已删除。");
+    throw e;
+  }
   const agent = first.agent;
   DIR = resolve(DIR ?? join(process.cwd(), "starport-agents", agent.handle));
   mkdirSync(DIR, { recursive: true });
@@ -198,7 +249,11 @@ const main = async () => {
   loadSessions();
 
   // —— --isolate：给该 agent 独立 config 沙箱（全局设置/记忆/登录都与其他 agent 隔离） ——
-  if (ISOLATE) {
+  // 仅 claude/codex 支持隔离沙箱；gemini/qwen 暂走默认配置。
+  if (ISOLATE && BACKEND !== "claude" && BACKEND !== "codex") {
+    log(`⚠ --isolate 暂不支持 ${BACKEND} 后端，已忽略`);
+  }
+  if (ISOLATE && (BACKEND === "claude" || BACKEND === "codex")) {
     if (BACKEND === "codex") {
       const home = join(DIR, ".codex-home");
       mkdirSync(home, { recursive: true });
@@ -218,11 +273,12 @@ const main = async () => {
     }
   }
 
-  // 人设落地为 CLAUDE.md（已存在则不覆盖——这是 agent 的「培养」文件，手动编辑生效）
-  const claudeMd = join(DIR, "CLAUDE.md");
-  if (!existsSync(claudeMd)) {
+  // 人设落地为后端的上下文文件（已存在则不覆盖——这是 agent 的「培养」文件，手动编辑生效）
+  const contextFile = BACKEND === "gemini" ? "GEMINI.md" : BACKEND === "qwen" ? "QWEN.md" : "CLAUDE.md";
+  const personaMd = join(DIR, contextFile);
+  if (!existsSync(personaMd)) {
     writeFileSync(
-      claudeMd,
+      personaMd,
       [
         `# ${agent.name} —— 星港聊天 Agent`,
         ``,
@@ -235,13 +291,13 @@ const main = async () => {
         `- 长期记忆放 memory/ 目录，任务状态写成文件，别依赖进程内状态`,
       ].join("\n"),
     );
-    log(`已写入人设 → ${claudeMd}`);
+    log(`已写入人设 → ${personaMd}`);
   }
 
   log(`✓ 已连接：${agent.name}（@${agent.handle}） · 后端 ${BACKEND} · 工作目录 ${DIR}${ISOLATE ? " · 独立沙箱" : ""}`);
   log(FULL_AUTO ? "⚠ full-auto：全部工具自动批准" : "权限模式：acceptEdits（要全自动加 --full-auto）");
 
-  const exec = BACKEND === "codex" ? runCodex : runClaude;
+  const exec = BACKEND === "codex" ? runCodex : BACKEND === "gemini" ? runGemini : BACKEND === "qwen" ? runQwen : runClaude;
   let backoff = 2000;
   // 先处理首拉就带回来的任务
   let pending = first.tasks ?? [];
@@ -270,6 +326,10 @@ const main = async () => {
       pending = res.tasks ?? [];
       backoff = 2000;
     } catch (e) {
+      // 仅 401 视为令牌失效而自清退出；403/5xx/网络抖动一律退避重试，保留对瞬时故障的韧性
+      if (e.status === 401) {
+        await selfCleanAndExit("✗ 令牌已失效（Agent 被删除或令牌重置）。停止连接器。");
+      }
       log(`连接失败（${e.message.slice(0, 80)}），${backoff / 1000}s 后重试`);
       await new Promise((r) => setTimeout(r, backoff));
       backoff = Math.min(backoff * 2, 60_000);

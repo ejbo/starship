@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { Bot, Check, Copy, Info, MessageSquare, Sparkles, Terminal, X } from "lucide-react";
-import { createAgentAction, type ConnectorCommand } from "@/app/agents-actions";
+import { useEffect, useState } from "react";
+import { Bot, Check, ChevronDown, Copy, Info, MessageSquare, Sparkles, Terminal, X } from "lucide-react";
+import {
+  createAgentAction,
+  getAgentDetailAction,
+  updateAgentSettingsAction,
+  type ConnectorCommand,
+} from "@/app/agents-actions";
+import { Avatar } from "@/components/ui/avatar";
+import { DEFAULT_AGENT_SETTINGS, HOSTED_PROVIDERS, PROVIDER_LABELS, type AgentSettings } from "@/lib/agent-shared";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 
@@ -10,7 +17,7 @@ const KINDS = [
   {
     value: "hosted" as const,
     label: "平台托管",
-    hint: "零配置，秒上线 · 平台 AI Gateway 生成回复",
+    hint: "零配置，秒上线 · 选模型来源，平台 Gateway 生成回复",
     icon: Sparkles,
   },
   {
@@ -25,7 +32,152 @@ const KINDS = [
     hint: "OpenAI Codex CLI 驱动，能力同上",
     icon: Terminal,
   },
+  {
+    value: "local-gemini" as const,
+    label: "本地 Gemini",
+    hint: "Google gemini CLI 驱动（需本机已装 gemini）",
+    icon: Terminal,
+  },
+  {
+    value: "local-qwen" as const,
+    label: "本地 Qwen",
+    hint: "通义 qwen-code CLI 驱动（需本机已装 qwen）",
+    icon: Terminal,
+  },
 ];
+
+const HUE_SWATCHES = [8, 28, 45, 95, 150, 175, 200, 225, 265, 300, 330];
+
+/** 头像色相选择 + 实时预览 */
+function AvatarHuePicker({ name, hue, onPick }: { name: string; hue: number; onPick: (h: number) => void }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <Avatar name={name || "A"} hue={hue} size="md" isAgent />
+      <div className="flex flex-wrap gap-1.5">
+        {HUE_SWATCHES.map((h) => (
+          <button
+            key={h}
+            type="button"
+            onClick={() => onPick(h)}
+            className={cn("size-5 rounded-full ring-2 ring-offset-1 ring-offset-panel transition", hue === h ? "ring-accent" : "ring-transparent hover:ring-line")}
+            style={{ background: `hsl(${h} 45% 50%)` }}
+            aria-label={`头像色 ${h}`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Toggle({ label, hint, checked, onChange }: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className="flex w-full items-start gap-2.5 rounded-lg px-1 py-1 text-left"
+    >
+      <span className={cn("mt-0.5 flex h-4 w-7 shrink-0 items-center rounded-full p-0.5 transition-colors", checked ? "bg-accent" : "bg-line")}>
+        <span className={cn("size-3 rounded-full bg-white transition-transform", checked && "translate-x-3")} />
+      </span>
+      <span className="min-w-0 leading-tight">
+        <span className="block text-[13px] text-ink">{label}</span>
+        {hint && <span className="block text-[11px] text-mute">{hint}</span>}
+      </span>
+    </button>
+  );
+}
+
+function NumberRow({ label, hint, value, min, max, onChange }: { label: string; hint?: string; value: number; min: number; max: number; onChange: (v: number) => void }) {
+  return (
+    <div className="flex items-center gap-2 px-1 py-1">
+      <span className="min-w-0 grow leading-tight">
+        <span className="block text-[13px] text-ink">{label}</span>
+        {hint && <span className="block text-[11px] text-mute">{hint}</span>}
+      </span>
+      <input
+        type="number"
+        value={value}
+        min={min}
+        max={max}
+        onChange={(e) => onChange(Math.max(min, Math.min(max, Number(e.target.value) || min)))}
+        className="w-16 shrink-0 rounded-lg border border-line bg-page px-2 py-1 text-sm focus:border-accent focus:outline-none"
+      />
+    </div>
+  );
+}
+
+/** 托管 provider + 模型；本地仅模型（透传 --model） */
+function ProviderModel({
+  isHosted,
+  provider,
+  model,
+  onProvider,
+  onModel,
+}: {
+  isHosted: boolean;
+  provider: string;
+  model: string;
+  onProvider: (p: string) => void;
+  onModel: (m: string) => void;
+}) {
+  return (
+    <div className={cn("grid gap-2", isHosted ? "grid-cols-2" : "grid-cols-1")}>
+      {isHosted && (
+        <label className="block space-y-1">
+          <span className="text-xs text-dim">模型来源</span>
+          <select
+            value={provider}
+            onChange={(e) => onProvider(e.target.value)}
+            className="w-full rounded-lg border border-line bg-page px-2.5 py-2 text-sm focus:border-accent focus:outline-none"
+          >
+            {HOSTED_PROVIDERS.map((p) => (
+              <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      <label className="block space-y-1">
+        <span className="text-xs text-dim">模型{isHosted ? "（可选）" : "（可选 · --model）"}</span>
+        <input
+          value={model}
+          onChange={(e) => onModel(e.target.value)}
+          placeholder="留空用默认"
+          className="w-full rounded-lg border border-line bg-page px-2.5 py-2 text-sm focus:border-accent focus:outline-none"
+        />
+      </label>
+    </div>
+  );
+}
+
+/** 折叠的高级设置（上下文/唤醒/限速/本地权限） */
+function AdvancedSettings({ settings, isLocal, onChange }: { settings: AgentSettings; isLocal: boolean; onChange: (patch: Partial<AgentSettings>) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-lg border border-line">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-1.5 px-3 py-2 text-xs font-medium text-dim transition-colors hover:text-ink">
+        <ChevronDown className={cn("size-3.5 transition-transform", !open && "-rotate-90")} />
+        高级设置
+        <span className="ml-auto text-[11px] text-mute">上下文 / 唤醒 / 限速{isLocal ? " / 权限" : ""}</span>
+      </button>
+      {open && (
+        <div className="space-y-0.5 border-t border-line px-2 py-2">
+          <NumberRow label="上下文条数" hint="agent 能看到的近期消息数" value={settings.contextMsgs} min={5} max={100} onChange={(v) => onChange({ contextMsgs: v })} />
+          <Toggle label="允许被其他 Agent @ 唤醒" hint="关掉则只有人能叫它" checked={settings.allowAgentMention} onChange={(v) => onChange({ allowAgentMention: v })} />
+          <Toggle label="私聊每条必回" hint="关掉则私聊也要 @ 它才回" checked={settings.dmAutoReply} onChange={(v) => onChange({ dmAutoReply: v })} />
+          <Toggle label="群里不被 @ 也主动发言" hint="仅对真人消息生效，防 Agent 互刷" checked={settings.groupProactive} onChange={(v) => onChange({ groupProactive: v })} />
+          <NumberRow label="互相 @ 链深上限" hint="Agent 之间最多接力几层" value={settings.maxHops} min={0} max={20} onChange={(v) => onChange({ maxHops: v })} />
+          <NumberRow label="限速（条 / 分钟）" value={settings.rateLimit} min={1} max={120} onChange={(v) => onChange({ rateLimit: v })} />
+          {isLocal && (
+            <>
+              <Toggle label="默认放开全部工具（--full-auto）" checked={settings.fullAuto} onChange={(v) => onChange({ fullAuto: v })} />
+              <Toggle label="独立配置沙箱（--isolate）" checked={settings.isolate} onChange={(v) => onChange({ isolate: v })} />
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Shell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
@@ -197,15 +349,25 @@ export function AgentModal({
   const [name, setName] = useState("");
   const [kind, setKind] = useState<(typeof KINDS)[number]["value"]>("hosted");
   const [persona, setPersona] = useState("");
+  const [avatarHue, setAvatarHue] = useState(() => HUE_SWATCHES[Math.floor(Math.random() * HUE_SWATCHES.length)]);
+  const [settings, setSettings] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ handle: string; name: string; command?: ConnectorCommand } | null>(null);
+  const isHosted = kind === "hosted";
+  const patchSettings = (p: Partial<AgentSettings>) => setSettings((s) => ({ ...s, ...p }));
 
   const create = async () => {
     if (!name.trim() || busy) return;
     setBusy(true);
     setError(null);
-    const res = await createAgentAction({ name: name.trim(), agentKind: kind, persona: persona.trim() || undefined });
+    const res = await createAgentAction({
+      name: name.trim(),
+      agentKind: kind,
+      persona: persona.trim() || undefined,
+      avatarHue,
+      settings: { ...settings, model: settings.model?.toString().trim() || null },
+    });
     setBusy(false);
     if (!res.ok || !res.agent) {
       setError(res.error ?? "创建失败");
@@ -258,6 +420,11 @@ export function AgentModal({
         </label>
 
         <div className="space-y-1.5">
+          <span className="text-xs text-dim">头像色</span>
+          <AvatarHuePicker name={name} hue={avatarHue} onPick={setAvatarHue} />
+        </div>
+
+        <div className="space-y-1.5">
           <span className="text-xs text-dim">形态</span>
           {KINDS.map((k) => (
             <button
@@ -278,6 +445,14 @@ export function AgentModal({
           ))}
         </div>
 
+        <ProviderModel
+          isHosted={isHosted}
+          provider={settings.provider}
+          model={settings.model ?? ""}
+          onProvider={(p) => patchSettings({ provider: p })}
+          onModel={(m) => patchSettings({ model: m })}
+        />
+
         <label className="block space-y-1">
           <span className="text-xs text-dim">人设 / 角色（可选）</span>
           <textarea
@@ -290,6 +465,8 @@ export function AgentModal({
           />
         </label>
 
+        <AdvancedSettings settings={settings} isLocal={!isHosted} onChange={patchSettings} />
+
         {error && <p className="text-xs text-danger">{error}</p>}
         <button
           onClick={create}
@@ -299,6 +476,116 @@ export function AgentModal({
           {busy ? "创建中…" : "创建 Agent"}
         </button>
       </div>
+    </Shell>
+  );
+}
+
+/** 编辑现有 Agent：改名 / 头像 / 模型来源 / 人设 / 高级设置（替代旧的纯人设弹窗） */
+export function AgentSettingsModal({ handle, onClose, onSaved }: { handle: string; onClose: () => void; onSaved: () => Promise<unknown> }) {
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState("");
+  const [persona, setPersona] = useState("");
+  const [avatarHue, setAvatarHue] = useState(0);
+  const [agentKind, setAgentKind] = useState("hosted");
+  const [settings, setSettings] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isHosted = agentKind === "hosted";
+  const patchSettings = (p: Partial<AgentSettings>) => setSettings((s) => ({ ...s, ...p }));
+
+  useEffect(() => {
+    let alive = true;
+    getAgentDetailAction(handle).then((res) => {
+      if (!alive) return;
+      if (res.ok) {
+        setName(res.detail.name);
+        setPersona(res.detail.persona);
+        setAvatarHue(res.detail.avatarHue);
+        setAgentKind(res.detail.agentKind);
+        setSettings(res.detail.settings);
+      } else {
+        setError(res.error);
+      }
+      setLoading(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [handle]);
+
+  const save = async () => {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await updateAgentSettingsAction(handle, {
+      name: name.trim(),
+      persona,
+      avatarHue,
+      settings: { ...settings, model: settings.model?.toString().trim() || null },
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error ?? "保存失败");
+      return;
+    }
+    await onSaved();
+    onClose();
+  };
+
+  return (
+    <Shell title="Agent 设置" onClose={onClose}>
+      {loading ? (
+        <p className="py-6 text-center text-sm text-mute">加载中…</p>
+      ) : (
+        <div className="space-y-3.5">
+          <label className="block space-y-1">
+            <span className="text-xs text-dim">名字</span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={24}
+              className="w-full rounded-lg border border-line bg-page px-3 py-2 text-sm focus:border-accent focus:outline-none"
+            />
+          </label>
+
+          <div className="space-y-1.5">
+            <span className="text-xs text-dim">头像色</span>
+            <AvatarHuePicker name={name} hue={avatarHue} onPick={setAvatarHue} />
+          </div>
+
+          <ProviderModel
+            isHosted={isHosted}
+            provider={settings.provider}
+            model={settings.model ?? ""}
+            onProvider={(p) => patchSettings({ provider: p })}
+            onModel={(m) => patchSettings({ model: m })}
+          />
+
+          <label className="block space-y-1">
+            <span className="text-xs text-dim">人设 / 角色</span>
+            <textarea
+              value={persona}
+              onChange={(e) => setPersona(e.target.value)}
+              rows={4}
+              maxLength={2000}
+              placeholder="TA 是谁？负责什么？什么说话风格？"
+              className="w-full resize-y rounded-lg border border-line bg-page px-3 py-2 text-sm leading-relaxed focus:border-accent focus:outline-none"
+            />
+            {!isHosted && <span className="text-[11px] text-mute">本地 Agent 的人设也写在其工作目录的上下文文件里，本机编辑同样生效。</span>}
+          </label>
+
+          <AdvancedSettings settings={settings} isLocal={!isHosted} onChange={patchSettings} />
+
+          {error && <p className="text-xs text-danger">{error}</p>}
+          <button
+            onClick={save}
+            disabled={!name.trim() || busy}
+            className="w-full rounded-lg bg-accent py-2 text-sm font-medium text-white transition-colors hover:bg-accent-deep disabled:opacity-50"
+          >
+            {busy ? "保存中…" : "保存"}
+          </button>
+        </div>
+      )}
     </Shell>
   );
 }

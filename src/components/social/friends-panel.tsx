@@ -97,7 +97,7 @@ function FriendRow({
   const meeting = friend.presence.kind === "meeting";
   return (
     <button
-      onClick={() => onOpenChat(friend.handle)}
+      onDoubleClick={() => onOpenChat(friend.handle)}
       onContextMenu={(e) => onContextMenu(e, friend)}
       {...miniProfileProps(friend)}
       className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-card-hi"
@@ -368,7 +368,6 @@ export function FriendsPanel({
           </div>
         )}
       </div>
-      <div className="border-t border-line px-3 py-1.5 text-center text-[10px] text-mute">单击打开聊天 · 右键更多操作</div>
     </>
   );
 }

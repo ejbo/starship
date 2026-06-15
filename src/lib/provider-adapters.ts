@@ -15,6 +15,9 @@ export const defaultModel: Record<string, string> = {
   openai: "gpt-5-mini",
   google: "gemini-2.5-flash",
   xai: "grok-4.20-0309-non-reasoning",
+  deepseek: "deepseek-chat",
+  zhipu: "glm-4-flash",
+  qwen: "qwen-plus",
 };
 
 const TIMEOUT_MS = 30_000;
@@ -97,6 +100,21 @@ export function callXai(key: string, model: string, prompt: string): Promise<Ada
   return callOpenAICompatible("https://api.x.ai/v1", key, model, prompt);
 }
 
+/** DeepSeek：原生 OpenAI 兼容 */
+export function callDeepseek(key: string, model: string, prompt: string): Promise<AdapterResult> {
+  return callOpenAICompatible("https://api.deepseek.com/v1", key, model, prompt);
+}
+
+/** 智谱 GLM：OpenAI 兼容端点（paas/v4） */
+export function callZhipu(key: string, model: string, prompt: string): Promise<AdapterResult> {
+  return callOpenAICompatible("https://open.bigmodel.cn/api/paas/v4", key, model, prompt);
+}
+
+/** 通义千问 Qwen：阿里云 DashScope 的 OpenAI 兼容端点 */
+export function callQwen(key: string, model: string, prompt: string): Promise<AdapterResult> {
+  return callOpenAICompatible("https://dashscope.aliyuncs.com/compatible-mode/v1", key, model, prompt);
+}
+
 /** provider → 适配器；未实现的 provider 抛错由上层降级 */
 export async function callProvider(provider: string, key: string, model: string, prompt: string): Promise<AdapterResult> {
   switch (provider) {
@@ -108,6 +126,12 @@ export async function callProvider(provider: string, key: string, model: string,
       return callGoogle(key, model, prompt);
     case "xai":
       return callXai(key, model, prompt);
+    case "deepseek":
+      return callDeepseek(key, model, prompt);
+    case "zhipu":
+      return callZhipu(key, model, prompt);
+    case "qwen":
+      return callQwen(key, model, prompt);
     default:
       throw new Error(`provider ${provider} 暂未接入真实调用`);
   }
