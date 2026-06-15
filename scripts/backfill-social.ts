@@ -28,12 +28,11 @@ function hashPassword(password: string): string {
   const salt = randomBytes(16);
   return `${salt.toString("hex")}:${scryptSync(password, salt, 64).toString("hex")}`;
 }
-const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 function friendCode(): string {
-  const b = randomBytes(6);
-  let s = "";
-  for (let i = 0; i < 6; i++) s += CODE_ALPHABET[b[i] % CODE_ALPHABET.length];
-  return "SP-" + s;
+  const b = randomBytes(8);
+  let s = String((b[0] % 9) + 1);
+  for (let i = 1; i < 8; i++) s += String(b[i] % 10);
+  return s;
 }
 
 const now = Date.now();
@@ -93,7 +92,7 @@ async function main() {
         select: { id: true },
       });
       if (!edge) {
-        await prisma.friendEdge.create({ data: { aId: me.id, bId: u.id, status: "accepted" } });
+        await prisma.friendEdge.create({ data: { aId: me.id, bId: u.id, status: "accepted", createdAt: iso(30), acceptedAt: iso(30) } });
         console.log("加好友", f.handle);
       }
     }
@@ -168,7 +167,7 @@ async function main() {
         where: { OR: [{ aId: me.id, bId: nova.id }, { aId: nova.id, bId: me.id }] },
         select: { id: true },
       });
-      if (!edge) await prisma.friendEdge.create({ data: { aId: me.id, bId: nova.id, status: "accepted" } });
+      if (!edge) await prisma.friendEdge.create({ data: { aId: me.id, bId: nova.id, status: "accepted", createdAt: iso(20), acceptedAt: iso(20) } });
       console.log("创建演示 Agent：Nova");
     }
   }

@@ -19,7 +19,7 @@ model User {
   id           String          @id @default(cuid())
   /// 登录用户名（唯一、不可改）
   handle       String          @unique
-  /// 唯一好友码（不可改，加好友用，如 SP-7K3M9Q）
+  /// 唯一好友码（不可改，加好友用，8 位纯数字，如 73920184）
   friendCode   String?         @unique
   /// 展示昵称（可改、可重名）
   name         String
@@ -267,7 +267,12 @@ model FriendEdge {
   id     String @id @default(cuid())
   aId    String
   bId    String
+  /// pending（a 申请 b）| accepted | ignored（b 忽略了 a 的申请，不再提示但保留）
   status String @default("accepted")
+  /// 申请发起时间（ISO）：好友申请按此倒序展示
+  createdAt  String @default("")
+  /// 接受时间（ISO）：「最近添加」按此倒序展示
+  acceptedAt String @default("")
   a      User   @relation("FriendA", fields: [aId], references: [id], onDelete: Cascade)
   b      User   @relation("FriendB", fields: [bId], references: [id], onDelete: Cascade)
 

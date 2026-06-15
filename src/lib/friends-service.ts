@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { getSessionUserId, getSessionUserIdOrNull } from "@/lib/session";
-import { normalizeFriendCode } from "@/lib/tokens";
+import { looksLikeFriendCode, normalizeFriendCode } from "@/lib/tokens";
 import type { AppIconArt, Friend, PresenceKind } from "@/lib/types";
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
@@ -243,22 +243,132 @@ export interface FriendRequestView {
   fromHandle: string;
   fromName: string;
   fromHue: number;
+  fromAvatarUrl: string | null;
+  /** 申请发起时间（ISO，可能为空，旧数据无） */
+  at: string | null;
 }
 
-/** 待我处理的好友请求 */
+/** 待我处理的好友请求（按发起时间新→旧） */
 export async function getIncomingRequests(): Promise<FriendRequestView[]> {
   const userId = await getSessionUserIdOrNull();
   if (!userId) return [];
   const edges = await prisma.friendEdge.findMany({
     where: { bId: userId, status: "pending" },
-    select: { id: true, a: { select: { handle: true, name: true, avatarHue: true } } },
+    select: { id: true, createdAt: true, a: { select: { handle: true, name: true, avatarHue: true, avatarUrl: true } } },
+    orderBy: { createdAt: "desc" },
   });
   return edges.map((e) => ({
     edgeId: e.id,
     fromHandle: e.a.handle,
     fromName: e.a.name,
     fromHue: e.a.avatarHue,
+    fromAvatarUrl: e.a.avatarUrl,
+    at: e.createdAt || null,
   }));
+}
+
+export interface UserSearchResult {
+  handle: string;
+  name: string;
+  avatarHue: number;
+  avatarUrl: string | null;
+  level: number;
+  friendCode: string | null;
+  /** 与我的关系，决定结果行展示哪个动作 */
+  relation: "self" | "friends" | "outgoing" | "incoming" | "none";
+  /** relation=incoming 时携带，便于直接接受 */
+  edgeId?: string;
+}
+
+/**
+ * 搜索可添加的用户（加好友面板用）：按好友码（纯数字）或昵称/用户名匹配，
+ * 排除 Agent 虚拟用户与自己，附带与我的关系。
+ */
+export async function searchUsersToAdd(query: string, limit = 20): Promise<UserSearchResult[]> {
+  const userId = await getSessionUserIdOrNull();
+  if (!userId) return [];
+  const raw = query.trim();
+  if (raw.length < 1) return [];
+
+  const or: Array<Record<string, unknown>> = [
+    { name: { contains: raw, mode: "insensitive" } },
+    { handle: { contains: raw.toLowerCase() } },
+  ];
+  if (looksLikeFriendCode(raw)) or.push({ friendCode: normalizeFriendCode(raw) });
+
+  const users = await prisma.user.findMany({
+    where: { kind: { not: "agent" }, id: { not: userId }, OR: or },
+    select: { id: true, handle: true, name: true, avatarHue: true, avatarUrl: true, level: true, friendCode: true },
+    take: limit,
+  });
+  if (users.length === 0) return [];
+
+  const ids = users.map((u) => u.id);
+  const edges = await prisma.friendEdge.findMany({
+    where: {
+      OR: [
+        { aId: userId, bId: { in: ids } },
+        { aId: { in: ids }, bId: userId },
+      ],
+    },
+    select: { id: true, aId: true, bId: true, status: true },
+  });
+  const edgeOf = (otherId: string) => edges.find((e) => e.aId === otherId || e.bId === otherId);
+
+  return users.map((u) => {
+    const e = edgeOf(u.id);
+    let relation: UserSearchResult["relation"] = "none";
+    let edgeId: string | undefined;
+    if (e) {
+      if (e.status === "accepted") relation = "friends";
+      else if (e.status === "pending") {
+        if (e.aId === userId) relation = "outgoing";
+        else {
+          relation = "incoming";
+          edgeId = e.id;
+        }
+      }
+      // ignored：视作可重新添加（relation 保持 none）
+    }
+    return {
+      handle: u.handle,
+      name: u.name,
+      avatarHue: u.avatarHue,
+      avatarUrl: u.avatarUrl,
+      level: u.level,
+      friendCode: u.friendCode,
+      relation,
+      edgeId,
+    };
+  });
+}
+
+/** 最近添加的好友（按接受时间新→旧），加好友面板用 */
+export async function getRecentFriends(limit = 6): Promise<Friend[]> {
+  const userId = await getSessionUserIdOrNull();
+  if (!userId) return [];
+  const edges = await prisma.friendEdge.findMany({
+    where: { status: "accepted", OR: [{ aId: userId }, { bId: userId }] },
+    select: { aId: true, bId: true, acceptedAt: true, createdAt: true },
+  });
+  if (edges.length === 0) return [];
+  const order = edges
+    .map((e) => ({ otherId: e.aId === userId ? e.bId : e.aId, t: e.acceptedAt || e.createdAt || "" }))
+    .sort((a, b) => b.t.localeCompare(a.t))
+    .slice(0, limit);
+  const ids = order.map((o) => o.otherId);
+  const [users, notes] = await Promise.all([
+    prisma.user.findMany({ where: { id: { in: ids } }, select: friendUserSelect }),
+    prisma.friendNote.findMany({ where: { ownerUserId: userId, targetUserId: { in: ids } } }),
+  ]);
+  const remarkByTarget = new Map(notes.map((n) => [n.targetUserId, n.remark]));
+  const byId = new Map(users.map((u) => [u.id, u]));
+  const friends = order
+    .map((o) => byId.get(o.otherId))
+    .filter((u): u is (typeof users)[number] => !!u)
+    .map((u) => toFriend(u, remarkByTarget.get(u.id) ?? null));
+  await attachAppIcons(friends);
+  return friends;
 }
 
 export async function getMyFriendCode(): Promise<string | null> {
@@ -268,19 +378,19 @@ export async function getMyFriendCode(): Promise<string | null> {
   return u?.friendCode ?? null;
 }
 
-/** 按好友码（SP-XXXXXX）或用户名解析目标用户 */
+/** 按好友码（纯数字）或用户名解析目标用户 */
 async function resolveTarget(identifier: string): Promise<{ id: string } | null> {
   const raw = identifier.trim();
   if (!raw) return null;
-  // 好友码优先（含 - 或全大写无空格的短码）
-  if (/^sp-/i.test(raw) || /^[0-9a-z]{6}$/i.test(raw)) {
+  // 好友码优先（4–8 位数字）
+  if (looksLikeFriendCode(raw)) {
     const byCode = await prisma.user.findUnique({ where: { friendCode: normalizeFriendCode(raw) }, select: { id: true } });
     if (byCode) return byCode;
   }
   return prisma.user.findUnique({ where: { handle: raw.toLowerCase() }, select: { id: true } });
 }
 
-/** identifier 可为好友码或用户名 */
+/** identifier 可为好友码或用户名；若对方此前已申请过我，则直接互为好友 */
 export async function sendFriendRequest(identifier: string): Promise<void> {
   const userId = await getSessionUserId();
   const target = await resolveTarget(identifier);
@@ -294,18 +404,45 @@ export async function sendFriendRequest(identifier: string): Promise<void> {
         { aId: target.id, bId: userId },
       ],
     },
-    select: { status: true },
+    select: { id: true, aId: true, status: true },
   });
-  if (existing) throw new Error(existing.status === "accepted" ? "你们已是好友" : "请求已存在");
 
-  await prisma.friendEdge.create({ data: { aId: userId, bId: target.id, status: "pending" } });
+  const now = new Date().toISOString();
+  if (existing) {
+    if (existing.status === "accepted") throw new Error("你们已是好友");
+    // 对方此前申请过我（pending 入向，或我曾忽略过 ta）→ 我再加 ta 即视为接受，直接成为好友
+    if (existing.aId === target.id) {
+      await prisma.friendEdge.update({ where: { id: existing.id }, data: { status: "accepted", acceptedAt: now } });
+      return;
+    }
+    // 我已申请过 ta（pending 出向）→ 提示已发送
+    throw new Error("请求已发送，等待对方确认");
+  }
+
+  await prisma.friendEdge.create({ data: { aId: userId, bId: target.id, status: "pending", createdAt: now } });
 }
 
 export async function acceptFriendRequest(edgeId: string): Promise<void> {
   const userId = await getSessionUserId();
-  const edge = await prisma.friendEdge.findUnique({ where: { id: edgeId }, select: { aId: true, bId: true, status: true } });
+  const edge = await prisma.friendEdge.findUnique({ where: { id: edgeId }, select: { bId: true, status: true } });
   if (!edge || edge.bId !== userId || edge.status !== "pending") return;
-  await prisma.friendEdge.update({ where: { id: edgeId }, data: { status: "accepted" } });
+  await prisma.friendEdge.update({ where: { id: edgeId }, data: { status: "accepted", acceptedAt: new Date().toISOString() } });
+}
+
+/** 拒绝好友请求：直接删除（对方可再次申请） */
+export async function rejectFriendRequest(edgeId: string): Promise<void> {
+  const userId = await getSessionUserId();
+  const edge = await prisma.friendEdge.findUnique({ where: { id: edgeId }, select: { bId: true, status: true } });
+  if (!edge || edge.bId !== userId || edge.status !== "pending") return;
+  await prisma.friendEdge.delete({ where: { id: edgeId } });
+}
+
+/** 忽略好友请求：保留但不再提示（对方仍处于已申请态，不会重复打扰我） */
+export async function ignoreFriendRequest(edgeId: string): Promise<void> {
+  const userId = await getSessionUserId();
+  const edge = await prisma.friendEdge.findUnique({ where: { id: edgeId }, select: { bId: true, status: true } });
+  if (!edge || edge.bId !== userId || edge.status !== "pending") return;
+  await prisma.friendEdge.update({ where: { id: edgeId }, data: { status: "ignored" } });
 }
 
 export async function removeFriend(handle: string): Promise<void> {

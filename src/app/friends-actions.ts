@@ -5,12 +5,17 @@ import {
   getFriendsWithPresence,
   getIncomingRequests,
   getMyPresence,
+  getRecentFriends,
+  ignoreFriendRequest,
+  rejectFriendRequest,
   removeFriend,
+  searchUsersToAdd,
   sendFriendRequest,
   setFriendRemark,
   touchPresence,
   type DerivedPresence,
   type FriendRequestView,
+  type UserSearchResult,
 } from "@/lib/friends-service";
 import {
   createChannel,
@@ -66,6 +71,31 @@ export async function addFriendAction(handle: string): Promise<{ ok: boolean; er
 
 export async function acceptRequestAction(edgeId: string): Promise<void> {
   await acceptFriendRequest(edgeId);
+}
+
+export async function rejectRequestAction(edgeId: string): Promise<void> {
+  await rejectFriendRequest(edgeId);
+}
+
+export async function ignoreRequestAction(edgeId: string): Promise<void> {
+  await ignoreFriendRequest(edgeId);
+}
+
+/** 处理好友申请：同意 / 拒绝 / 忽略 */
+export async function respondRequestAction(edgeId: string, decision: "accept" | "reject" | "ignore"): Promise<void> {
+  if (decision === "accept") await acceptFriendRequest(edgeId);
+  else if (decision === "reject") await rejectFriendRequest(edgeId);
+  else await ignoreFriendRequest(edgeId);
+}
+
+/** 搜索可添加的用户（按好友码或昵称/用户名） */
+export async function searchUsersAction(query: string): Promise<UserSearchResult[]> {
+  return searchUsersToAdd(query);
+}
+
+/** 最近添加的好友（加好友面板展示） */
+export async function recentFriendsAction(): Promise<Friend[]> {
+  return getRecentFriends();
 }
 
 export async function removeFriendAction(handle: string): Promise<void> {

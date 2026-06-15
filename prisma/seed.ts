@@ -22,13 +22,12 @@ function hashPassword(password: string): string {
   return `${salt.toString("hex")}:${scryptSync(password, salt, 64).toString("hex")}`;
 }
 
-/** 与 src/lib/tokens.ts 同算法的好友码 */
-const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+/** 与 src/lib/tokens.ts 同算法的好友码：8 位纯数字（首位非 0） */
 function friendCode(): string {
-  const b = randomBytes(6);
-  let s = "";
-  for (let i = 0; i < 6; i++) s += CODE_ALPHABET[b[i] % CODE_ALPHABET.length];
-  return "SP-" + s;
+  const b = randomBytes(8);
+  let s = String((b[0] % 9) + 1);
+  for (let i = 1; i < 8; i++) s += String(b[i] % 10);
+  return s;
 }
 
 /** 与 src/lib/crypto.ts 同算法（种子脚本独立运行，避免 server-only 导入） */
@@ -200,7 +199,7 @@ async function main() {
   };
 
   const friendByHandle = new Map<string, string>();
-  for (const f of friends) {
+  for (const [idx, f] of friends.entries()) {
     const extra = FRIEND_EXTRAS[f.handle] ?? {};
     const friend = await prisma.user.create({
       data: {
@@ -219,7 +218,9 @@ async function main() {
       },
     });
     friendByHandle.set(f.handle, friend.id);
-    await prisma.friendEdge.create({ data: { aId: me.id, bId: friend.id, status: "accepted" } });
+    // acceptedAt 按列表顺序错开（越靠前=越早加），让「最近添加」有合理排序
+    const acceptedAt = iso((idx + 1) * 24 * 60);
+    await prisma.friendEdge.create({ data: { aId: me.id, bId: friend.id, status: "accepted", createdAt: acceptedAt, acceptedAt } });
   }
   const chatSeed: Array<[string, Array<["me" | "friend", string, number]>]> = [
     ["linyuan", [["friend", "你上次说的那个对比技巧，怎么设置来着？", 1440], ["me", "新建会话选「双栏」，左边固定 Claude", 1435], ["friend", "好使，今天省了一半时间", 120]]],
@@ -300,7 +301,7 @@ async function main() {
       lastSeenAt: new Date().toISOString(),
     },
   });
-  await prisma.friendEdge.create({ data: { aId: me.id, bId: demoAgent.id, status: "accepted" } });
+  await prisma.friendEdge.create({ data: { aId: me.id, bId: demoAgent.id, status: "accepted", createdAt: iso(60), acceptedAt: iso(60) } });
 
   const productBySlug = new Map(products.map((p) => [p.slug, p.id]));
   for (const entry of currentUser.library) {

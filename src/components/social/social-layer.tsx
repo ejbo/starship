@@ -5,7 +5,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Bot, Copy, KeyRound, MessageSquare, Store, Terminal, Trash2, UserMinus, Users } from "lucide-react";
 import { deleteAgentAction, getAgentCommandAction, resetAgentTokenAction, updateAgentPersonaAction, type ConnectorCommand } from "@/app/agents-actions";
 import {
-  acceptRequestAction,
   addFriendAction,
   createGroupAction,
   deleteMessageAction,
@@ -17,11 +16,14 @@ import {
   loadConversationAction,
   loadUnreadCountsAction,
   pollUpdatesAction,
+  recentFriendsAction,
   refreshGroupsAction,
   refreshSocialAction,
   removeFriendAction,
   reportReadAction,
   reportTypingAction,
+  respondRequestAction,
+  searchUsersAction,
   sendGroupMessageAction,
   sendMessageAction,
   setMicAction,
@@ -837,17 +839,23 @@ export function SocialLayer({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
               transition={{ duration: 0.16, ease: "easeOut" }}
-              className="flex h-[min(34rem,calc(100vh-8rem))] w-[21rem] flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-[0_12px_40px_-12px_rgb(28_36_51/.25)]"
+              className="flex h-[min(46rem,calc(100vh-5rem))] w-[22rem] flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-[0_12px_40px_-12px_rgb(28_36_51/.25)]"
             >
               {view === "add" ? (
                 <AddFriendView
                   myCode={me.friendCode}
                   requests={requests}
                   onBack={() => setView("list")}
+                  onSearch={searchUsersAction}
                   onAdd={addFriendAction}
-                  onAccept={async (id) => {
-                    await acceptRequestAction(id);
+                  onRespond={async (id, decision) => {
+                    await respondRequestAction(id, decision);
                     await refresh();
+                  }}
+                  loadRecent={recentFriendsAction}
+                  onOpenChat={(h) => {
+                    setView("list");
+                    void openChat(h);
                   }}
                 />
               ) : (

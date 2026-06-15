@@ -1,16 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { Bot, Check, ChevronDown, Copy, Plus, Search, UserPlus, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Bot, Check, ChevronDown, Clock, Copy, MessageSquare, Plus, Search, UserCheck, UserPlus, Users, X } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { getProductIcon } from "@/lib/icons";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
-import type { FriendRequestView } from "@/lib/friends-service";
+import type { FriendRequestView, UserSearchResult } from "@/lib/friends-service";
 import type { GroupMember, GroupSummary } from "@/lib/group-service";
 import type { Friend, PresenceKind } from "@/lib/types";
 import { miniProfileProps } from "./mini-profile";
-import { display, presenceMeta, statusText } from "./presence";
+import { display, presenceMeta, statusText, timeAgo } from "./presence";
 
 export interface Me {
   handle: string;
@@ -97,7 +97,7 @@ function FriendRow({
   const meeting = friend.presence.kind === "meeting";
   return (
     <button
-      onDoubleClick={() => onOpenChat(friend.handle)}
+      onClick={() => onOpenChat(friend.handle)}
       onContextMenu={(e) => onContextMenu(e, friend)}
       {...miniProfileProps(friend)}
       className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-card-hi"
@@ -146,6 +146,8 @@ function SectionHeader({
   );
 }
 
+type Tab = "all" | "friends" | "agents";
+
 export function FriendsPanel({
   me,
   myPresence,
@@ -178,7 +180,7 @@ export function FriendsPanel({
   onContextMenu: (e: React.MouseEvent, f: Friend) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [tab, setTab] = useState<"friends" | "agents">("friends");
+  const [tab, setTab] = useState<Tab>("all");
   const toggle = (key: string) =>
     setCollapsed((cur) => {
       const next = new Set(cur);
@@ -187,23 +189,46 @@ export function FriendsPanel({
       return next;
     });
 
-  const matched = friends.filter((f) => display(f).includes(query) || f.name.includes(query) || f.handle.includes(query));
-  const humans = matched.filter((f) => !f.isAgent);
-  const agents = matched.filter((f) => f.isAgent);
-  const agentTotal = friends.filter((f) => f.isAgent).length;
-  const inApp = humans.filter((f) => f.presence.kind === "using" || f.presence.kind === "meeting");
-  const online = humans.filter((f) => f.presence.kind === "online");
-  const offline = humans.filter((f) => f.presence.kind === "offline");
-  const filteredGroups = groups.filter((g) => g.name.includes(query));
+  const q = query.trim();
+  const matches = (f: Friend) => display(f).includes(q) || f.name.includes(q) || f.handle.includes(q);
+  const humansAll = friends.filter((f) => !f.isAgent);
+  const agentsAll = friends.filter((f) => f.isAgent);
+
+  // 当前 tab 的候选池（已套用搜索）
+  const pool = (tab === "agents" ? agentsAll : tab === "friends" ? humansAll : friends).filter(matches);
+  const inApp = pool.filter((f) => f.presence.kind === "using" || f.presence.kind === "meeting");
+  const online = pool.filter((f) => f.presence.kind === "online");
+  const offline = pool.filter((f) => f.presence.kind === "offline");
+  const filteredGroups = q ? groups.filter((g) => g.name.includes(q)) : groups;
+  const showGroups = tab !== "agents";
   const myMeta = presenceMeta[myPresence.kind];
+
+  const tabs: { key: Tab; label: string; count: number; icon?: typeof Bot }[] = [
+    { key: "all", label: "全部", count: friends.length },
+    { key: "friends", label: "好友", count: humansAll.length },
+    { key: "agents", label: "Agent", count: agentsAll.length, icon: Bot },
+  ];
 
   const renderSection = (key: string, label: string, list: Friend[]) =>
     list.length > 0 && (
-      <div>
+      <div key={key}>
         <SectionHeader label={label} count={list.length} collapsed={collapsed.has(key)} onToggle={() => toggle(key)} />
         {!collapsed.has(key) && list.map((f) => <FriendRow key={f.handle} friend={f} onOpenChat={onOpenChat} onContextMenu={onContextMenu} />)}
       </div>
     );
+
+  const emptyHint =
+    tab === "agents"
+      ? agentsAll.length === 0
+        ? "还没有 AI Agent。点上方按钮创建：托管的秒上线，本地的接 Claude Code / Codex。"
+        : "没有匹配的 Agent"
+      : tab === "friends"
+        ? humansAll.length === 0
+          ? "还没有好友，点右上角 + 添加。"
+          : "没有匹配的好友"
+        : friends.length === 0
+          ? "还没有好友或 Agent，点右上角 + 添加。"
+          : "没有匹配的结果";
 
   return (
     <>
@@ -226,7 +251,7 @@ export function FriendsPanel({
           </span>
         </span>
         <div className="ml-auto flex items-center gap-0.5">
-          <button onClick={onAdd} className="relative rounded-lg p-1.5 text-dim transition-colors hover:bg-card-hi hover:text-ink" aria-label="添加好友" title="添加好友">
+          <button onClick={onAdd} className="relative rounded-lg p-1.5 text-dim transition-colors hover:bg-card-hi hover:text-ink" aria-label="添加好友" title="添加好友 / 好友申请">
             <UserPlus className="size-4" />
             {requestCount > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-danger text-[9px] font-bold text-white">
@@ -240,14 +265,9 @@ export function FriendsPanel({
         </div>
       </div>
 
-      {/* 好友 / AI Agents 双 tab */}
+      {/* 全部 / 好友 / Agent 三 tab */}
       <div className="flex items-center gap-1 border-b border-line px-3 pt-2">
-        {(
-          [
-            { key: "friends" as const, label: "好友", count: friends.length - agentTotal },
-            { key: "agents" as const, label: "AI Agents", count: agentTotal },
-          ]
-        ).map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
@@ -256,7 +276,7 @@ export function FriendsPanel({
               tab === t.key ? "border-accent font-medium text-ink" : "border-transparent text-dim hover:text-ink",
             )}
           >
-            {t.key === "agents" && <Bot className="size-3.5" />}
+            {t.icon && <t.icon className="size-3.5" />}
             {t.label}
             <span className="text-[11px] text-mute">{t.count}</span>
           </button>
@@ -269,53 +289,47 @@ export function FriendsPanel({
           <input
             value={query}
             onChange={(e) => onQuery(e.target.value)}
-            placeholder={tab === "agents" ? "按名字搜索 Agent" : "按名字搜索好友或群组"}
+            placeholder={tab === "agents" ? "搜索 Agent" : tab === "friends" ? "搜索好友或群组" : "搜索好友或 Agent"}
             className="w-full bg-transparent text-ink placeholder:text-mute focus:outline-none"
           />
+          {query && (
+            <button onClick={() => onQuery("")} className="text-mute transition-colors hover:text-ink" aria-label="清除搜索">
+              <X className="size-3.5" />
+            </button>
+          )}
         </label>
       </div>
 
-      {tab === "agents" ? (
-        <div className="grow overflow-y-auto px-1 pb-1">
+      <div className="grow overflow-y-auto px-1 pb-1">
+        {tab === "agents" && (
           <button
             onClick={onCreateAgent}
             className="mx-1 mt-2 flex w-[calc(100%-0.5rem)] items-center justify-center gap-1.5 rounded-lg border border-dashed border-line py-2 text-sm text-dim transition-colors hover:border-accent/50 hover:text-accent"
           >
             <Plus className="size-4" /> 添加 Agent
           </button>
-          {agents.length === 0 ? (
-            agentTotal > 0 ? (
-              <p className="px-3 pt-6 text-center text-xs text-mute">没有匹配的 Agent</p>
-            ) : (
-              <p className="px-3 pt-6 text-center text-xs leading-relaxed text-mute">
-                还没有 AI Agent。
-                <br />
-                一键创建：托管的秒上线，本地的接 Claude Code / Codex，
-                <br />
-                可私聊指挥、可拉进群组和大家协作。
-              </p>
-            )
-          ) : (
-            <div className="mt-1.5">
-              {agents.map((f) => (
-                <FriendRow key={f.handle} friend={f} onOpenChat={onOpenChat} onContextMenu={onContextMenu} />
-              ))}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="grow overflow-y-auto px-1 pb-1">
-          {humans.length === 0 && query === "" ? (
-            <p className="px-2 pt-8 text-center text-xs text-mute">还没有好友，点右上角添加。</p>
-          ) : (
-            <>
-              {renderSection("inapp", "正在使用", inApp)}
-              {renderSection("online", "在线好友", online)}
-              {renderSection("offline", "离线", offline)}
-            </>
-          )}
+        )}
 
-          {/* 群组聊天（Steam GROUP CHATS） */}
+        {pool.length === 0 && filteredGroups.length === 0 ? (
+          <p className="px-3 pt-8 text-center text-xs leading-relaxed text-mute">{emptyHint}</p>
+        ) : q ? (
+          // 搜索态：平铺结果，不分组
+          <div className="mt-1">
+            {pool.map((f) => (
+              <FriendRow key={f.handle} friend={f} onOpenChat={onOpenChat} onContextMenu={onContextMenu} />
+            ))}
+            {pool.length === 0 && <p className="px-3 pt-4 text-center text-xs text-mute">没有匹配的{tab === "agents" ? " Agent" : "好友"}</p>}
+          </div>
+        ) : (
+          <>
+            {renderSection("inapp", "正在使用", inApp)}
+            {renderSection("online", "在线", online)}
+            {renderSection("offline", "离线", offline)}
+          </>
+        )}
+
+        {/* 群组聊天（Steam GROUP CHATS） */}
+        {showGroups && (
           <div className="mt-1 border-t border-line">
             <SectionHeader
               label="群组聊天"
@@ -352,38 +366,142 @@ export function FriendsPanel({
                 })
               ))}
           </div>
-        </div>
-      )}
-      <div className="border-t border-line px-3 py-1.5 text-center text-[10px] text-mute">双击打开聊天 · 右键更多操作</div>
+        )}
+      </div>
+      <div className="border-t border-line px-3 py-1.5 text-center text-[10px] text-mute">单击打开聊天 · 右键更多操作</div>
     </>
   );
 }
 
 // ———————————————————— 添加好友 ————————————————————
+
+/** 搜索结果行的动作按钮（按与我的关系切换） */
+function ResultAction({
+  res,
+  pending,
+  onAdd,
+  onAccept,
+  onMessage,
+}: {
+  res: UserSearchResult;
+  pending: boolean;
+  onAdd: () => void;
+  onAccept: () => void;
+  onMessage: () => void;
+}) {
+  if (res.relation === "self") return <span className="shrink-0 text-[11px] text-mute">你自己</span>;
+  if (res.relation === "friends")
+    return (
+      <button onClick={onMessage} className="flex shrink-0 items-center gap-1 rounded-lg border border-line px-2.5 py-1 text-xs font-medium text-dim transition-colors hover:border-accent/50 hover:text-accent">
+        <MessageSquare className="size-3" /> 发消息
+      </button>
+    );
+  if (res.relation === "outgoing" || pending)
+    return (
+      <span className="flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-mute">
+        <Clock className="size-3" /> 已申请
+      </span>
+    );
+  if (res.relation === "incoming")
+    return (
+      <button onClick={onAccept} className="flex shrink-0 items-center gap-1 rounded-lg bg-accent px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-accent-deep">
+        <UserCheck className="size-3" /> 接受
+      </button>
+    );
+  return (
+    <button onClick={onAdd} className="flex shrink-0 items-center gap-1 rounded-lg bg-accent px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-accent-deep">
+      <UserPlus className="size-3" /> 添加
+    </button>
+  );
+}
+
 export function AddFriendView({
   myCode,
   requests,
   onBack,
+  onSearch,
   onAdd,
-  onAccept,
+  onRespond,
+  loadRecent,
+  onOpenChat,
 }: {
   myCode: string | null;
   requests: FriendRequestView[];
   onBack: () => void;
+  onSearch: (q: string) => Promise<UserSearchResult[]>;
   onAdd: (h: string) => Promise<{ ok: boolean; error?: string }>;
-  onAccept: (edgeId: string) => Promise<void>;
+  onRespond: (edgeId: string, decision: "accept" | "reject" | "ignore") => Promise<void>;
+  loadRecent: () => Promise<Friend[]>;
+  onOpenChat: (h: string) => void;
 }) {
-  const [handle, setHandle] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<UserSearchResult[] | null>(null);
+  const [searching, setSearching] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [recent, setRecent] = useState<Friend[]>([]);
+  const [pendingAdds, setPendingAdds] = useState<Set<string>>(new Set());
+  const [handledReqs, setHandledReqs] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  const searchToken = useRef(0);
 
-  const submit = async () => {
-    const h = handle.trim();
-    if (!h) return;
-    const res = await onAdd(h);
-    setMsg(res.ok ? `已向 ${h} 发送好友请求` : res.error ?? "添加失败");
-    if (res.ok) setHandle("");
+  // 最近添加（挂载时取一次）
+  useEffect(() => {
+    let alive = true;
+    loadRecent().then((r) => alive && setRecent(r)).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [loadRecent]);
+
+  // 搜索（300ms 防抖；token 防竞态）。token 先自增，使清空查询也能让在途请求失效，避免旧结果回填
+  useEffect(() => {
+    const term = q.trim();
+    const token = ++searchToken.current;
+    if (!term) {
+      setResults(null);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const r = await onSearch(term);
+        if (searchToken.current === token) setResults(r);
+      } catch {
+        if (searchToken.current === token) setResults([]);
+      } finally {
+        if (searchToken.current === token) setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q, onSearch]);
+
+  const add = async (handle: string) => {
+    setError(null);
+    setPendingAdds((s) => new Set(s).add(handle));
+    const res = await onAdd(handle);
+    if (!res.ok) {
+      setError(res.error ?? "添加失败");
+      setPendingAdds((s) => {
+        const n = new Set(s);
+        n.delete(handle);
+        return n;
+      });
+    }
   };
+
+  const accept = async (res: UserSearchResult) => {
+    if (!res.edgeId) return;
+    await onRespond(res.edgeId, "accept");
+    setResults((cur) => cur?.map((r) => (r.handle === res.handle ? { ...r, relation: "friends" } : r)) ?? cur);
+  };
+
+  const respond = async (edgeId: string, decision: "accept" | "reject" | "ignore") => {
+    setHandledReqs((s) => new Set(s).add(edgeId));
+    await onRespond(edgeId, decision);
+  };
+
+  const visibleReqs = requests.filter((r) => !handledReqs.has(r.edgeId));
 
   return (
     <div className="flex h-full flex-col">
@@ -393,12 +511,14 @@ export function AddFriendView({
         </button>
         <p className="text-sm font-medium">添加好友</p>
       </div>
+
       <div className="grow space-y-4 overflow-y-auto p-3">
+        {/* 我的好友码 */}
         {myCode && (
-          <div className="rounded-lg border border-line bg-card-hi p-2.5">
-            <p className="text-[11px] text-mute">你的好友码（分享给别人加你）</p>
-            <div className="mt-1 flex items-center gap-2">
-              <code className="grow font-mono text-sm font-semibold text-accent">{myCode}</code>
+          <div className="rounded-xl border border-line bg-card-hi p-3">
+            <p className="text-[11px] text-mute">你的好友码 · 把这串数字给朋友，对方搜索即可加你</p>
+            <div className="mt-1.5 flex items-center gap-2">
+              <code className="grow font-mono text-xl font-bold tracking-[0.2em] text-accent">{myCode}</code>
               <button
                 onClick={async () => {
                   if (await copyText(myCode)) {
@@ -406,47 +526,147 @@ export function AddFriendView({
                     setTimeout(() => setCopied(false), 1200);
                   }
                 }}
-                className="text-mute transition-colors hover:text-accent"
+                className="flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs text-dim transition-colors hover:border-accent/50 hover:text-accent"
                 aria-label="复制好友码"
               >
-                {copied ? <span className="text-[11px] text-free">已复制</span> : <Copy className="size-3.5" />}
+                {copied ? <span className="text-free">已复制</span> : <><Copy className="size-3" /> 复制</>}
               </button>
             </div>
           </div>
         )}
-        <div className="space-y-2">
-          <div className="flex gap-2">
+
+        {/* 搜索加好友 */}
+        <div>
+          <label className="flex items-center gap-2 rounded-lg border border-line bg-page px-2.5 py-2 text-sm text-mute focus-within:border-accent">
+            <Search className="size-3.5" />
             <input
-              value={handle}
-              onChange={(e) => setHandle(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              placeholder="对方的好友码或用户名"
-              className="grow rounded-lg border border-line bg-page px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="输入好友码或昵称查找"
+              className="w-full bg-transparent text-ink placeholder:text-mute focus:outline-none"
+              autoFocus
             />
-            <button onClick={submit} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-accent-deep">
-              添加
-            </button>
-          </div>
-          {msg && <p className="text-xs text-dim">{msg}</p>}
+            {q && (
+              <button onClick={() => setQ("")} className="text-mute transition-colors hover:text-ink" aria-label="清除">
+                <X className="size-3.5" />
+              </button>
+            )}
+          </label>
+          {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
         </div>
-        {requests.length > 0 && (
-          <div>
-            <p className="mb-2 text-[11px] font-medium text-mute">待处理请求 ({requests.length})</p>
-            <ul className="space-y-2">
-              {requests.map((req) => (
-                <li key={req.edgeId} className="flex items-center gap-2.5">
-                  <Avatar name={req.fromName} hue={req.fromHue} size="sm" />
-                  <span className="min-w-0 grow truncate text-sm">{req.fromName}</span>
-                  <button
-                    onClick={() => onAccept(req.edgeId)}
-                    className="flex items-center gap-1 rounded-lg bg-accent px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-accent-deep"
-                  >
-                    <Check className="size-3" /> 接受
-                  </button>
-                </li>
-              ))}
-            </ul>
+
+        {/* 搜索结果 */}
+        {q.trim() ? (
+          <div className="space-y-1">
+            {searching && results === null ? (
+              <p className="px-1 py-3 text-center text-xs text-mute">搜索中…</p>
+            ) : results && results.length > 0 ? (
+              results.map((r) => (
+                <div key={r.handle} className="flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-card-hi">
+                  <Avatar name={r.name} hue={r.avatarHue} src={r.avatarUrl} size="sm" />
+                  <span className="min-w-0 grow leading-tight">
+                    <span className="block truncate text-sm text-ink">{r.name}</span>
+                    <span className="flex items-center gap-1.5 text-[11px] text-mute">
+                      <span className="truncate">@{r.handle}</span>
+                      {r.friendCode && <span className="shrink-0 font-mono text-accent/80">{r.friendCode}</span>}
+                    </span>
+                  </span>
+                  <ResultAction
+                    res={r}
+                    pending={pendingAdds.has(r.handle)}
+                    onAdd={() => add(r.handle)}
+                    onAccept={() => accept(r)}
+                    onMessage={() => onOpenChat(r.handle)}
+                  />
+                </div>
+              ))
+            ) : (
+              <p className="px-1 py-3 text-center text-xs text-mute">没有找到匹配的用户</p>
+            )}
           </div>
+        ) : (
+          <>
+            {/* 好友申请 */}
+            <div>
+              <p className="mb-1.5 flex items-center gap-1.5 px-0.5 text-[11px] font-semibold tracking-wide text-mute">
+                <UserPlus className="size-3.5" /> 好友申请{visibleReqs.length > 0 && ` (${visibleReqs.length})`}
+              </p>
+              {visibleReqs.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-line px-3 py-3 text-center text-xs text-mute">暂无待处理的好友申请</p>
+              ) : (
+                <ul className="space-y-1">
+                  {visibleReqs.map((req) => (
+                    <li key={req.edgeId} className="flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 hover:bg-card-hi">
+                      <Avatar name={req.fromName} hue={req.fromHue} src={req.fromAvatarUrl} size="sm" />
+                      <span className="min-w-0 grow leading-tight">
+                        <span className="block truncate text-sm text-ink">{req.fromName}</span>
+                        <span className="block truncate text-[11px] text-mute">
+                          @{req.fromHandle}{req.at ? ` · ${timeAgo(req.at)}` : ""}
+                        </span>
+                      </span>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          onClick={() => respond(req.edgeId, "accept")}
+                          className="flex items-center gap-1 rounded-lg bg-accent px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-accent-deep"
+                          title="同意"
+                        >
+                          <Check className="size-3" /> 同意
+                        </button>
+                        <button
+                          onClick={() => respond(req.edgeId, "ignore")}
+                          className="rounded-lg border border-line px-2 py-1 text-xs text-dim transition-colors hover:bg-card-hi hover:text-ink"
+                          title="忽略（不再提示，对方不会被告知）"
+                        >
+                          忽略
+                        </button>
+                        <button
+                          onClick={() => respond(req.edgeId, "reject")}
+                          className="rounded-lg p-1 text-mute transition-colors hover:bg-danger/10 hover:text-danger"
+                          title="拒绝"
+                          aria-label="拒绝"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* 最近添加 */}
+            {recent.length > 0 && (
+              <div>
+                <p className="mb-1.5 flex items-center gap-1.5 px-0.5 text-[11px] font-semibold tracking-wide text-mute">
+                  <Users className="size-3.5" /> 最近添加
+                </p>
+                <div className="space-y-0.5">
+                  {recent.map((f) => {
+                    const meta = presenceMeta[f.presence.kind];
+                    return (
+                      <button
+                        key={f.handle}
+                        onClick={() => onOpenChat(f.handle)}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-card-hi"
+                      >
+                        <span className="relative shrink-0">
+                          <Avatar name={display(f)} hue={f.avatarHue} src={f.avatarUrl} size="sm" />
+                          <span className={cn("absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-panel", meta.dot)} />
+                        </span>
+                        <span className="min-w-0 leading-tight">
+                          <span className="flex items-center gap-1 truncate text-sm text-ink">
+                            {f.name}
+                            {f.isAgent && <Bot className="size-3 shrink-0 opacity-70" />}
+                          </span>
+                          <span className={cn("block truncate text-[11px]", f.presence.kind === "offline" ? "text-mute" : meta.tone)}>{statusText(f)}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
