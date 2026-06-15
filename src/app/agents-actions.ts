@@ -17,7 +17,7 @@ import type { AgentSettings } from "@/lib/agent-shared";
 
 /** 取 agent 可编辑资料（设置弹窗预填） */
 export async function getAgentDetailAction(handle: string): Promise<
-  { ok: true; detail: { name: string; persona: string; avatarHue: number; agentKind: string; settings: AgentSettings } } | { ok: false; error: string }
+  { ok: true; detail: { name: string; persona: string; avatarHue: number; avatarUrl: string | null; agentKind: string; settings: AgentSettings } } | { ok: false; error: string }
 > {
   try {
     return { ok: true, detail: await getAgentDetail(handle) };
@@ -97,6 +97,7 @@ export async function createAgentAction(input: {
   agentKind: AgentKind;
   persona?: string;
   avatarHue?: number;
+  avatarUrl?: string | null;
   settings?: Partial<AgentSettings>;
 }): Promise<CreateAgentResult> {
   try {
@@ -124,7 +125,7 @@ export async function renameAgentAction(handle: string, name: string): Promise<{
 /** 更新 agent 资料/设置（名字/人设/头像/可调参数；设置增量合并） */
 export async function updateAgentSettingsAction(
   handle: string,
-  patch: { name?: string; persona?: string; avatarHue?: number; settings?: Partial<AgentSettings> },
+  patch: { name?: string; persona?: string; avatarHue?: number; avatarUrl?: string | null; settings?: Partial<AgentSettings> },
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     await updateAgent(handle, patch);

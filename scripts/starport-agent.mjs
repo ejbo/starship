@@ -187,20 +187,20 @@ async function runCodex(prompt, convKey) {
   return text.trim();
 }
 
-/** Gemini CLI：gemini（提示词走 stdin，非交互直出文本；上下文/记忆靠工作目录 GEMINI.md + 文件） */
+/** Gemini CLI：gemini（提示词走 stdin 非交互直出文本；模型用 --model；上下文/记忆靠工作目录 GEMINI.md + 文件） */
 async function runGemini(prompt) {
   const argv = [];
   if (FULL_AUTO) argv.push("--yolo");
-  if (MODEL) argv.push("-m", MODEL);
+  if (MODEL) argv.push("--model", MODEL);
   const out = await run("gemini", argv, prompt, DIR);
   return out.trim();
 }
 
-/** Qwen Code CLI：qwen（gemini-cli 同源 fork，用法一致；上下文靠 QWEN.md + 文件） */
+/** Qwen Code CLI：qwen（gemini-cli 同源 fork，用法一致；模型用 --model；上下文靠 QWEN.md + 文件） */
 async function runQwen(prompt) {
   const argv = [];
   if (FULL_AUTO) argv.push("--yolo");
-  if (MODEL) argv.push("-m", MODEL);
+  if (MODEL) argv.push("--model", MODEL);
   const out = await run("qwen", argv, prompt, DIR);
   return out.trim();
 }
@@ -227,7 +227,10 @@ function buildPrompt(agent, task) {
   lines.push(`请给出回复。要求：`);
   lines.push(`- 直接输出回复正文（会原样贴回聊天，可用 markdown）`);
   lines.push(`- 保持简洁；长任务先给结论再给要点`);
-  if (task.kind === "group") lines.push(`- 需要别的成员（含其他 agent）接手时，用 @对方handle 提及`);
+  if (task.kind === "group") {
+    lines.push(`- 群聊礼仪：默认不要 @ 任何人；只有确实需要某成员（含其他 agent）接手时才用 @对方handle 提及`);
+    lines.push(`- 问题已解决 / 只是普通回应或收尾时，正常作答即可，切勿习惯性每句点名别人，避免无意义来回刷屏`);
+  }
   return lines.join("\n");
 }
 

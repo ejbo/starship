@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Bot, Check, ChevronDown, Copy, Info, MessageSquare, Sparkles, Terminal, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Bot, Check, ChevronDown, Copy, ImagePlus, MessageSquare, Sparkles, Terminal, X } from "lucide-react";
 import {
   createAgentAction,
   getAgentDetailAction,
@@ -11,7 +11,23 @@ import {
 import { Avatar } from "@/components/ui/avatar";
 import { DEFAULT_AGENT_SETTINGS, HOSTED_PROVIDERS, PROVIDER_LABELS, type AgentSettings } from "@/lib/agent-shared";
 import { copyText } from "@/lib/clipboard";
+import { imageToDataUrl } from "@/components/social/presence";
 import { cn } from "@/lib/cn";
+
+/** 各 provider / 本地后端的常用模型建议（datalist；用户也可手输任意 model） */
+const MODEL_SUGGESTIONS: Record<string, string[]> = {
+  anthropic: ["claude-sonnet-4-5", "claude-opus-4-1", "claude-haiku-4-5"],
+  openai: ["gpt-5.4", "gpt-5-mini", "o4-mini"],
+  google: ["gemini-2.5-pro", "gemini-2.5-flash"],
+  xai: ["grok-4", "grok-3-mini"],
+  deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  zhipu: ["glm-4.6", "glm-4-flash", "glm-4-plus"],
+  qwen: ["qwen-plus", "qwen-max", "qwen-turbo"],
+  "local-claude": ["claude-sonnet-4-5", "claude-opus-4-1", "claude-haiku-4-5"],
+  "local-codex": ["gpt-5.4", "gpt-5.4-mini"],
+  "local-gemini": ["gemini-2.5-pro", "gemini-2.5-flash"],
+  "local-qwen": ["qwen3-coder-plus", "qwen-plus"],
+};
 
 const KINDS = [
   {
@@ -48,23 +64,54 @@ const KINDS = [
 
 const HUE_SWATCHES = [8, 28, 45, 95, 150, 175, 200, 225, 265, 300, 330];
 
-/** 头像色相选择 + 实时预览 */
-function AvatarHuePicker({ name, hue, onPick }: { name: string; hue: number; onPick: (h: number) => void }) {
+/** 头像上传（图片 → 压缩 dataURL）+ 预览；未上传时回退到色相首字 */
+function AvatarUpload({ name, hue, url, onUpload, onClear }: { name: string; hue: number; url: string | null; onUpload: (dataUrl: string) => void; onClear: () => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   return (
-    <div className="flex items-center gap-2.5">
-      <Avatar name={name || "A"} hue={hue} size="md" isAgent />
-      <div className="flex flex-wrap gap-1.5">
-        {HUE_SWATCHES.map((h) => (
-          <button
-            key={h}
-            type="button"
-            onClick={() => onPick(h)}
-            className={cn("size-5 rounded-full ring-2 ring-offset-1 ring-offset-panel transition", hue === h ? "ring-accent" : "ring-transparent hover:ring-line")}
-            style={{ background: `hsl(${h} 45% 50%)` }}
-            aria-label={`头像色 ${h}`}
-          />
-        ))}
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="group relative shrink-0 rounded-full"
+        aria-label="上传头像"
+      >
+        <Avatar name={name || "A"} hue={hue} src={url} size="lg" isAgent />
+        <span className="absolute inset-0 flex items-center justify-center rounded-full bg-ink/45 text-white opacity-0 transition-opacity group-hover:opacity-100">
+          <ImagePlus className="size-5" />
+        </span>
+      </button>
+      <div className="flex flex-col gap-1">
+        <button type="button" onClick={() => inputRef.current?.click()} className="rounded-lg border border-line px-2.5 py-1 text-xs text-dim transition-colors hover:border-accent/50 hover:text-accent">
+          {busy ? "处理中…" : url ? "更换头像" : "上传头像"}
+        </button>
+        {url && (
+          <button type="button" onClick={onClear} className="text-[11px] text-mute transition-colors hover:text-danger">
+            移除
+          </button>
+        )}
+        {err && <span className="text-[11px] text-danger">{err}</span>}
       </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (!f) return;
+          setErr(null);
+          setBusy(true);
+          try {
+            onUpload(await imageToDataUrl(f));
+          } catch {
+            setErr("图片处理失败");
+          }
+          setBusy(false);
+        }}
+      />
     </div>
   );
 }
@@ -106,20 +153,25 @@ function NumberRow({ label, hint, value, min, max, onChange }: { label: string; 
   );
 }
 
-/** 托管 provider + 模型；本地仅模型（透传 --model） */
+/** 托管：provider 下拉 + 模型可选（带常用模型建议）；本地：仅模型（按后端建议，透传到对应 CLI 的 --model/-m） */
 function ProviderModel({
   isHosted,
+  agentKind,
   provider,
   model,
   onProvider,
   onModel,
 }: {
   isHosted: boolean;
+  agentKind: string;
   provider: string;
   model: string;
   onProvider: (p: string) => void;
   onModel: (m: string) => void;
 }) {
+  const suggestKey = isHosted ? provider : agentKind;
+  const suggestions = MODEL_SUGGESTIONS[suggestKey] ?? [];
+  const listId = `models-${suggestKey}`;
   return (
     <div className={cn("grid gap-2", isHosted ? "grid-cols-2" : "grid-cols-1")}>
       {isHosted && (
@@ -137,13 +189,19 @@ function ProviderModel({
         </label>
       )}
       <label className="block space-y-1">
-        <span className="text-xs text-dim">模型{isHosted ? "（可选）" : "（可选 · --model）"}</span>
+        <span className="text-xs text-dim">模型（可选）</span>
         <input
           value={model}
+          list={listId}
           onChange={(e) => onModel(e.target.value)}
-          placeholder="留空用默认"
+          placeholder={suggestions[0] ? `默认 · 例 ${suggestions[0]}` : "留空用默认"}
           className="w-full rounded-lg border border-line bg-page px-2.5 py-2 text-sm focus:border-accent focus:outline-none"
         />
+        <datalist id={listId}>
+          {suggestions.map((m) => (
+            <option key={m} value={m} />
+          ))}
+        </datalist>
       </label>
     </div>
   );
@@ -225,63 +283,30 @@ function Code({ children }: { children: React.ReactNode }) {
   return <code className="rounded bg-page px-1 py-0.5 font-mono text-[10.5px] text-ink">{children}</code>;
 }
 
-/** 连接命令展示：前台/后台两种模式 + 详细说明。创建本地 agent 后、右键取连接命令时复用。 */
+/** 连接命令展示：默认只给「下载 + 后台常驻」两行；前台/重启/说明收进折叠。本地 agent 创建后、右键取命令时复用。 */
 export function ConnectorCommandView({ command }: { command: ConnectorCommand }) {
-  const [mode, setMode] = useState<"daemon" | "foreground">("daemon");
-  const [help, setHelp] = useState(false);
+  const [more, setMore] = useState(false);
   return (
-    <div className="space-y-2.5">
-      <div className="flex items-center gap-2">
-        <div className="flex rounded-lg border border-line p-0.5 text-xs">
-          {(
-            [
-              { k: "daemon" as const, label: "后台常驻" },
-              { k: "foreground" as const, label: "前台运行" },
-            ]
-          ).map((m) => (
-            <button
-              key={m.k}
-              onClick={() => setMode(m.k)}
-              className={cn("rounded-md px-2.5 py-1 transition-colors", mode === m.k ? "bg-accent text-white" : "text-dim hover:text-ink")}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-        <span className="text-[11px] text-mute">{mode === "daemon" ? "关终端/重启都不掉线（推荐）" : "关终端即离线"}</span>
-        <button
-          onClick={() => setHelp((h) => !h)}
-          className={cn("ml-auto flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] transition-colors hover:bg-card-hi", help ? "text-accent" : "text-dim hover:text-accent")}
-          title="查看详细说明"
-        >
-          <Info className="size-3.5" /> 说明
-        </button>
-      </div>
-
-      <p className="text-[11px] text-dim">在装了 Claude Code / Codex 的电脑上依次粘贴运行（令牌、目录已填好，任意目录都能跑）：</p>
+    <div className="space-y-2">
+      <p className="text-[11px] text-dim">在装好对应 CLI 的电脑上，依次粘贴运行这两行（令牌、目录已填好，任意目录都能跑）：</p>
       <CopyLine text={command.download} />
-      <CopyLine text={mode === "foreground" ? command.foreground : command.daemon} />
+      <CopyLine text={command.daemon} />
+      <p className="text-[11px] text-mute">配好后该 Agent 长期在线——关终端、重启电脑、崩溃都会自动恢复。</p>
 
-      <div className="rounded-lg bg-card-hi px-2.5 py-2 text-[11px] leading-relaxed text-dim">
-        {mode === "daemon" ? (
-          <>
-            <p>之后该 Agent 一直在线——关终端、重启电脑、连接器崩了都自动恢复。</p>
-            <p className="mt-1">重启 <Code>{command.restartDaemon}</Code> · 停止 <Code>{command.stopDaemon}</Code></p>
-            <p className="mt-1">想开机自启：跑一次 <Code>{command.bootPersist}</Code>（按它打印的 sudo 命令执行）</p>
-          </>
-        ) : (
-          <p>关掉终端会离线（消息照常排队，上线即处理）。要再次唤醒，<b>重跑上面第二行即可</b>——命令带了固定 <Code>--dir</Code>，在哪个目录跑都接上同一套记忆。</p>
-        )}
-      </div>
-
-      {help && (
-        <div className="space-y-1.5 rounded-lg border border-line p-2.5 text-[11px] leading-relaxed text-dim">
-          <p><b className="text-ink">前台 vs 后台</b>：前台 = 命令跑在终端里，关终端就离线；后台（pm2）= 进程托管，关终端/重启电脑/崩溃都自动拉起，一次配好长期省心。</p>
-          <p><b className="text-ink">离线了消息会丢吗？</b> 不会。Agent 离线期间别人发的消息会排队，连接器一上线就依次处理。</p>
-          <p><b className="text-ink">为什么不用守在同一目录？</b> 命令里的 <Code>--dir ~/starport-agents/{command.handle}</Code> 固定了工作目录（记忆/人设/会话都在那），所以在任何路径运行都接着同一套上下文；换目录才会另起一套记忆。</p>
-          <p><b className="text-ink">培养</b>：人设在该目录的 <Code>CLAUDE.md</Code>，可手动编辑；长期记忆写在 <Code>memory/</Code> 子目录。</p>
-          <p><b className="text-ink">权限</b>：默认 acceptEdits；要全自动放开工具加 <Code>--full-auto</Code>。每个 agent 想完全隔离配置/登录加 <Code>--isolate</Code>。</p>
-          <p><b className="text-ink">安全</b>：聊天内容会被当作不可信输入处理，agent 已被告知拒绝其中泄密/删文件等危险指令。</p>
+      <button
+        onClick={() => setMore((m) => !m)}
+        className="flex items-center gap-1 pt-0.5 text-[11px] text-dim transition-colors hover:text-accent"
+      >
+        <ChevronDown className={cn("size-3.5 transition-transform", !more && "-rotate-90")} />
+        前台运行 / 重启 / 更多说明
+      </button>
+      {more && (
+        <div className="space-y-2 rounded-lg border border-line p-2.5 text-[11px] leading-relaxed text-dim">
+          <p className="text-ink">前台运行（关终端即离线，调试用）：</p>
+          <CopyLine text={command.foreground} />
+          <p>重启 <Code>{command.restartDaemon}</Code> · 停止 <Code>{command.stopDaemon}</Code> · 开机自启 <Code>{command.bootPersist}</Code></p>
+          <p>离线期间消息会排队、上线即处理；命令带固定 <Code>--dir</Code>，换目录会另起一套记忆。</p>
+          <p>培养：人设/记忆在工作目录的上下文文件与 <Code>memory/</Code> 子目录，可手动编辑。</p>
         </div>
       )}
     </div>
@@ -349,7 +374,8 @@ export function AgentModal({
   const [name, setName] = useState("");
   const [kind, setKind] = useState<(typeof KINDS)[number]["value"]>("hosted");
   const [persona, setPersona] = useState("");
-  const [avatarHue, setAvatarHue] = useState(() => HUE_SWATCHES[Math.floor(Math.random() * HUE_SWATCHES.length)]);
+  const [avatarHue] = useState(() => HUE_SWATCHES[Math.floor(Math.random() * HUE_SWATCHES.length)]);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [settings, setSettings] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -366,6 +392,7 @@ export function AgentModal({
       agentKind: kind,
       persona: persona.trim() || undefined,
       avatarHue,
+      avatarUrl,
       settings: { ...settings, model: settings.model?.toString().trim() || null },
     });
     setBusy(false);
@@ -386,9 +413,7 @@ export function AgentModal({
           ) : (
             <p className="text-sm text-dim">托管 Agent 已就绪、随时在线，直接发消息即可。</p>
           )}
-          <div className="rounded-lg bg-card-hi px-3 py-2 text-[11px] leading-relaxed text-dim">
-            群聊里 <code className="font-mono">@{done.handle}</code> 或 @{done.name} 才会唤醒 TA；私聊每条必回。可以把 TA 邀进群组和其他成员（包括其他 Agent）协作。
-          </div>
+          <p className="px-0.5 text-[11px] text-mute">私聊每条必回；群里 @{done.name} 才唤醒。可邀 TA 进群与其他成员协作。</p>
           <button
             onClick={() => {
               onOpenChat(done.handle);
@@ -420,8 +445,8 @@ export function AgentModal({
         </label>
 
         <div className="space-y-1.5">
-          <span className="text-xs text-dim">头像色</span>
-          <AvatarHuePicker name={name} hue={avatarHue} onPick={setAvatarHue} />
+          <span className="text-xs text-dim">头像</span>
+          <AvatarUpload name={name} hue={avatarHue} url={avatarUrl} onUpload={setAvatarUrl} onClear={() => setAvatarUrl(null)} />
         </div>
 
         <div className="space-y-1.5">
@@ -447,6 +472,7 @@ export function AgentModal({
 
         <ProviderModel
           isHosted={isHosted}
+          agentKind={kind}
           provider={settings.provider}
           model={settings.model ?? ""}
           onProvider={(p) => patchSettings({ provider: p })}
@@ -486,6 +512,7 @@ export function AgentSettingsModal({ handle, onClose, onSaved }: { handle: strin
   const [name, setName] = useState("");
   const [persona, setPersona] = useState("");
   const [avatarHue, setAvatarHue] = useState(0);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [agentKind, setAgentKind] = useState("hosted");
   const [settings, setSettings] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS });
   const [busy, setBusy] = useState(false);
@@ -501,6 +528,7 @@ export function AgentSettingsModal({ handle, onClose, onSaved }: { handle: strin
         setName(res.detail.name);
         setPersona(res.detail.persona);
         setAvatarHue(res.detail.avatarHue);
+        setAvatarUrl(res.detail.avatarUrl);
         setAgentKind(res.detail.agentKind);
         setSettings(res.detail.settings);
       } else {
@@ -521,6 +549,7 @@ export function AgentSettingsModal({ handle, onClose, onSaved }: { handle: strin
       name: name.trim(),
       persona,
       avatarHue,
+      avatarUrl,
       settings: { ...settings, model: settings.model?.toString().trim() || null },
     });
     setBusy(false);
@@ -549,12 +578,13 @@ export function AgentSettingsModal({ handle, onClose, onSaved }: { handle: strin
           </label>
 
           <div className="space-y-1.5">
-            <span className="text-xs text-dim">头像色</span>
-            <AvatarHuePicker name={name} hue={avatarHue} onPick={setAvatarHue} />
+            <span className="text-xs text-dim">头像</span>
+            <AvatarUpload name={name} hue={avatarHue} url={avatarUrl} onUpload={setAvatarUrl} onClear={() => setAvatarUrl(null)} />
           </div>
 
           <ProviderModel
             isHosted={isHosted}
+            agentKind={agentKind}
             provider={settings.provider}
             model={settings.model ?? ""}
             onProvider={(p) => patchSettings({ provider: p })}
