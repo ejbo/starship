@@ -568,6 +568,12 @@ export function ChatWindow(props: ChatWindowProps) {
 
   const typers = convKey ? props.typing[convKey] ?? [] : [];
   const peerReadAt = activeFriend && convKey ? props.reads[convKey] ?? null : null;
+  // Agent「已收到，正在生成」指示：基于 agent 活动态（presence=using，由连接器/托管在处理任务时上报）
+  const workingAgents: Friend[] = activeIsGroup
+    ? (activeGroup?.members ?? []).filter((m) => m.isAgent && m.presence.kind === "using")
+    : activeFriend?.isAgent && activeFriend.presence.kind === "using"
+      ? [activeFriend]
+      : [];
 
   const messageArea = (
     <div ref={scrollRef} onScroll={onScroll} className="relative grow space-y-1 overflow-y-auto bg-page/40 px-3 py-3">
@@ -595,6 +601,7 @@ export function ChatWindow(props: ChatWindowProps) {
         )
       )}
       {typers.length > 0 && <TypingBubble typers={typers} isGroup={activeIsGroup} />}
+      {workingAgents.length > 0 && <AgentWorkingBubble agents={workingAgents} />}
     </div>
   );
 
@@ -1254,6 +1261,28 @@ function TypingBubble({ typers, isGroup }: { typers: { handle: string; name: str
         <span className="size-1.5 animate-bounce rounded-full bg-mute" />
       </span>
       {label}
+    </div>
+  );
+}
+
+// —— Agent「已收到，正在生成」状态条（绿色，带机器人图标 + 跳动点） ——
+// 只显示通用文案，不渲染 presence.detail：detail 是 agent 的全局活动态，可能含「另一会话的消息预览」，
+// 在群里原样展示会把第三方私聊内容泄露给无关成员。这里只表达「收到、正在生成」。
+function AgentWorkingBubble({ agents }: { agents: Friend[] }) {
+  const names = agents.map((a) => a.remark || a.name);
+  const label =
+    agents.length === 1
+      ? `${names[0]} 正在生成回复…`
+      : `${names.slice(0, 2).join("、")}${names.length > 2 ? " 等" : ""} 正在生成回复…`;
+  return (
+    <div className="flex items-center gap-2 px-1 py-1 text-[11px] text-green">
+      <Bot className="size-3.5 shrink-0" />
+      <span className="flex gap-0.5">
+        <span className="size-1.5 animate-bounce rounded-full bg-green [animation-delay:-0.3s]" />
+        <span className="size-1.5 animate-bounce rounded-full bg-green [animation-delay:-0.15s]" />
+        <span className="size-1.5 animate-bounce rounded-full bg-green" />
+      </span>
+      <span className="min-w-0 truncate">{label}</span>
     </div>
   );
 }
