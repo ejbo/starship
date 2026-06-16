@@ -192,6 +192,8 @@ model AgentTask {
   body           String
   attachmentUrl  String?
   attachmentName String?
+  /// 私聊任务所属会话线程（回复回到该线程）
+  threadId       String?
   groupId        String?
   groupName      String?
   channelId      String?
@@ -283,6 +285,8 @@ model Message {
   replyToId  String?
   /// 变更游标：轮询用 updatedAt>since 取变更行
   updatedAt  String?
+  /// agent 私聊的会话线程（AgentThread.id）；null = 人类私聊 / 历史 agent 私聊（视作默认线程）
+  threadId   String?
   from   User    @relation("MsgFrom", fields: [fromId], references: [id], onDelete: Cascade)
   to     User    @relation("MsgTo", fields: [toId], references: [id], onDelete: Cascade)
   replyTo Message?  @relation("MsgReply", fields: [replyToId], references: [id], onDelete: SetNull)
@@ -290,6 +294,21 @@ model Message {
 
   @@index([fromId, toId, at])
   @@index([fromId, toId, updatedAt])
+  @@index([threadId, at])
+}
+
+/// agent 私聊的会话线程（每个 owner↔agent 可有多条独立上下文的对话）
+model AgentThread {
+  id        String @id @default(cuid())
+  ownerId   String
+  agentId   String
+  /// 对话标题（AI 总结或手动改名；空则按首条消息/「新对话」展示）
+  title     String @default("")
+  createdAt String
+  /// 最近活动时间（排序用）
+  lastAt    String
+
+  @@index([ownerId, agentId, lastAt])
 }
 
 model FriendEdge {
