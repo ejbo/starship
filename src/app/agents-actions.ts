@@ -6,14 +6,36 @@ import {
   deleteAgent,
   getAgentDetail,
   getAgentToken,
+  listAgentFiles,
   renameAgent,
   resetAgentToken,
+  saveAgentFile,
   updateAgent,
   updateAgentPersona,
+  type AgentFileView,
   type AgentKind,
   type CreatedAgent,
 } from "@/lib/agent-service";
 import type { AgentSettings } from "@/lib/agent-shared";
+
+/** owner 查看 agent 同步上来的工作目录文件 */
+export async function getAgentFilesAction(handle: string): Promise<{ ok: boolean; files?: AgentFileView[]; error?: string }> {
+  try {
+    return { ok: true, files: await listAgentFiles(handle) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "加载失败" };
+  }
+}
+
+/** owner 在网页编辑 agent 文件 → 待连接器写回本机 */
+export async function saveAgentFileAction(handle: string, path: string, content: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await saveAgentFile(handle, path, content);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "保存失败" };
+  }
+}
 
 /** 取 agent 可编辑资料（设置弹窗预填） */
 export async function getAgentDetailAction(handle: string): Promise<

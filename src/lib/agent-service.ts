@@ -47,6 +47,7 @@ export function getAgentSettings(raw: unknown): AgentSettings {
     replyMarkdown: typeof s.replyMarkdown === "boolean" ? s.replyMarkdown : d.replyMarkdown,
     temperature: typeof s.temperature === "number" && s.temperature >= 0 && s.temperature <= 2 ? Math.round(s.temperature * 10) / 10 : d.temperature,
     groupSlowmodeSec: clampInt(s.groupSlowmodeSec, 0, 3600, d.groupSlowmodeSec),
+    syncFiles: typeof s.syncFiles === "boolean" ? s.syncFiles : d.syncFiles,
   };
 }
 
@@ -243,6 +244,8 @@ export interface AgentIdentity {
   ownerName: string;
   /** 当前设置的模型（raw，null=用 CLI 默认）；连接器据此每次任务用 -m/--model 实时切换 */
   model: string | null;
+  /** 是否开启工作目录文件同步（连接器据此决定是否上传/回写文件） */
+  syncFiles: boolean;
 }
 
 /** Bearer spa_xxx → agent；顺带刷新连接器在线时间。agentTokenHash 有唯一索引，findUnique 命中索引 */
@@ -256,6 +259,7 @@ export async function authAgentToken(token: string): Promise<AgentIdentity | nul
   const owner = u.agentOwnerId
     ? await prisma.user.findUnique({ where: { id: u.agentOwnerId }, select: { name: true } })
     : null;
+  const s = getAgentSettings(u.agentSettings);
   return {
     id: u.id,
     handle: u.handle,
@@ -263,8 +267,72 @@ export async function authAgentToken(token: string): Promise<AgentIdentity | nul
     agentKind: u.agentKind ?? "local-claude",
     persona: u.agentPersona,
     ownerName: owner?.name ?? "",
-    model: getAgentSettings(u.agentSettings).model,
+    model: s.model,
+    syncFiles: s.syncFiles,
   };
+}
+
+// —— 本地 agent 文件镜像（opt-in 同步） ——
+
+export interface AgentFileView {
+  path: string;
+  content: string;
+  pendingPush: boolean;
+  updatedAt: string;
+}
+
+const MAX_FILE_BYTES = 200_000; // 单文件上限，超出截断
+const MAX_FILES = 60;
+
+/**
+ * 连接器同步：上传本机文件内容 + ack 已写回的路径；返回仍待写回本机的网页编辑。
+ * 冲突处理：pendingPush=true（网页改过、未写回）的文件不被连接器上传内容覆盖；
+ * 连接器写回磁盘后用 acked 清除其 pendingPush。
+ */
+export async function syncAgentFiles(
+  agentId: string,
+  files: { path: string; content: string }[],
+  acked: string[],
+): Promise<AgentFileView[]> {
+  const now = new Date().toISOString();
+  // 先清除已写回的 pendingPush
+  if (acked.length > 0) {
+    await prisma.agentFile.updateMany({ where: { agentId, path: { in: acked.slice(0, MAX_FILES) } }, data: { pendingPush: false } });
+  }
+  // 当前各文件的 pendingPush 状态（避免覆盖网页未写回的编辑）
+  const existing = await prisma.agentFile.findMany({ where: { agentId }, select: { path: true, pendingPush: true } });
+  const pendingSet = new Set(existing.filter((e) => e.pendingPush && !acked.includes(e.path)).map((e) => e.path));
+  for (const f of files.slice(0, MAX_FILES)) {
+    if (pendingSet.has(f.path)) continue; // 网页有未写回编辑，保留网页版本
+    const content = typeof f.content === "string" ? f.content.slice(0, MAX_FILE_BYTES) : "";
+    await prisma.agentFile.upsert({
+      where: { agentId_path: { agentId, path: f.path } },
+      update: { content, updatedAt: now },
+      create: { agentId, path: f.path, content, updatedAt: now },
+    });
+  }
+  const pending = await prisma.agentFile.findMany({ where: { agentId, pendingPush: true }, select: { path: true, content: true, pendingPush: true, updatedAt: true } });
+  return pending;
+}
+
+/** owner 查看该 agent 的文件镜像 */
+export async function listAgentFiles(handle: string): Promise<AgentFileView[]> {
+  const agent = await ownedAgentOrThrow(handle);
+  const rows = await prisma.agentFile.findMany({ where: { agentId: agent.id }, orderBy: { path: "asc" }, select: { path: true, content: true, pendingPush: true, updatedAt: true } });
+  return rows;
+}
+
+/** owner 在网页编辑文件 → 标记待写回本机 */
+export async function saveAgentFile(handle: string, path: string, content: string): Promise<void> {
+  const agent = await ownedAgentOrThrow(handle);
+  const clean = path.trim().slice(0, 200);
+  if (!clean) throw new Error("路径不能为空");
+  const now = new Date().toISOString();
+  await prisma.agentFile.upsert({
+    where: { agentId_path: { agentId: agent.id, path: clean } },
+    update: { content: content.slice(0, MAX_FILE_BYTES), pendingPush: true, updatedAt: now },
+    create: { agentId: agent.id, path: clean, content: content.slice(0, MAX_FILE_BYTES), pendingPush: true, updatedAt: now },
+  });
 }
 
 export async function touchAgentPoll(agentId: string): Promise<void> {

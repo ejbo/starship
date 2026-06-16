@@ -5,6 +5,8 @@ import { Bot, Check, ChevronDown, Copy, ImagePlus, MessageSquare, Sparkles, Term
 import {
   createAgentAction,
   getAgentDetailAction,
+  getAgentFilesAction,
+  saveAgentFileAction,
   updateAgentSettingsAction,
   type ConnectorCommand,
 } from "@/app/agents-actions";
@@ -229,6 +231,97 @@ function ProviderModel({
   );
 }
 
+/** Agent 工作目录文件：未同步显示本地路径；已同步可查看/编辑（编辑写回本机） */
+function AgentFiles({ handle, syncOn, agentKind }: { handle: string; syncOn: boolean; agentKind: string }) {
+  const [files, setFiles] = useState<{ path: string; content: string; pendingPush: boolean; updatedAt: string }[] | null>(null);
+  const [sel, setSel] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const ctxFile = agentKind === "local-gemini" ? "GEMINI.md" : agentKind === "local-qwen" ? "QWEN.md" : "CLAUDE.md";
+
+  const load = async () => {
+    const res = await getAgentFilesAction(handle);
+    if (res.ok && res.files) {
+      setFiles(res.files);
+      if (res.files.length > 0 && sel === null) {
+        setSel(res.files[0].path);
+        setDraft(res.files[0].content);
+      }
+    }
+  };
+  useEffect(() => {
+    if (syncOn) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncOn, handle]);
+
+  if (!syncOn) {
+    return (
+      <div className="space-y-1.5 rounded-lg border border-line p-2.5 text-[11px] leading-relaxed text-dim">
+        <p className="text-ink">本地文件（在 TA 的工作目录）：</p>
+        <p>人设：<code className="rounded bg-page px-1 font-mono">~/starport-agents/{handle}/{ctxFile}</code></p>
+        <p>记忆：<code className="rounded bg-page px-1 font-mono">~/starport-agents/{handle}/memory/</code></p>
+        <p className="text-mute">想在网页查看/编辑这些文件？打开上方「高级设置 → 同步工作目录文件」。</p>
+      </div>
+    );
+  }
+
+  const pick = (p: string) => {
+    const f = files?.find((x) => x.path === p);
+    setSel(p);
+    setDraft(f?.content ?? "");
+  };
+  const save = async () => {
+    if (sel === null) return;
+    setBusy(true);
+    await saveAgentFileAction(handle, sel, draft);
+    setBusy(false);
+    await load();
+  };
+
+  return (
+    <div className="space-y-2">
+      {files === null ? (
+        <p className="py-2 text-center text-[11px] text-mute">加载中…</p>
+      ) : files.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-line px-3 py-3 text-center text-[11px] text-mute">连接器尚未上传文件——确保连接器在线、且已重新下载最新脚本。</p>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-1.5">
+            {files.map((f) => (
+              <button
+                key={f.path}
+                type="button"
+                onClick={() => pick(f.path)}
+                className={cn(
+                  "rounded-md border px-2 py-0.5 font-mono text-[11px] transition-colors",
+                  sel === f.path ? "border-accent bg-accent/10 text-accent" : "border-line text-dim hover:border-accent/40",
+                )}
+              >
+                {f.path}
+                {f.pendingPush && <span className="ml-1 text-warn" title="待写回本机">●</span>}
+              </button>
+            ))}
+          </div>
+          {sel !== null && (
+            <>
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={8}
+                className="w-full resize-y rounded-lg border border-line bg-page px-2.5 py-2 font-mono text-[11px] leading-relaxed focus:border-accent focus:outline-none"
+              />
+              <button onClick={save} disabled={busy} className="w-full rounded-lg bg-accent py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-deep disabled:opacity-50">
+                {busy ? "保存中…" : "保存并写回本机"}
+              </button>
+              <p className="text-[10px] text-mute">保存后会在连接器下次收件（约 20s 内）写回到 TA 本机的对应文件。</p>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /** 折叠的高级设置（上下文/唤醒/限速/本地权限） */
 function AdvancedSettings({ settings, isLocal, onChange }: { settings: AgentSettings; isLocal: boolean; onChange: (patch: Partial<AgentSettings>) => void }) {
   const [open, setOpen] = useState(false);
@@ -284,6 +377,7 @@ function AdvancedSettings({ settings, isLocal, onChange }: { settings: AgentSett
             <>
               <Toggle label="默认放开全部工具（--full-auto）" checked={settings.fullAuto} onChange={(v) => onChange({ fullAuto: v })} />
               <Toggle label="独立配置沙箱（--isolate）" checked={settings.isolate} onChange={(v) => onChange({ isolate: v })} />
+              <Toggle label="同步工作目录文件到平台" hint="开启后可在网页查看/编辑 TA 的人设与记忆文件，编辑会写回本机" checked={settings.syncFiles} onChange={(v) => onChange({ syncFiles: v })} />
             </>
           )}
         </div>
@@ -660,6 +754,13 @@ export function AgentSettingsModal({ handle, onClose, onSaved }: { handle: strin
           </label>
 
           <AdvancedSettings settings={settings} isLocal={!isHosted} onChange={patchSettings} />
+
+          {!isHosted && (
+            <div className="space-y-1.5">
+              <span className="text-xs text-dim">文件 / 记忆</span>
+              <AgentFiles handle={handle} syncOn={settings.syncFiles} agentKind={agentKind} />
+            </div>
+          )}
 
           {error && <p className="text-xs text-danger">{error}</p>}
           <button

@@ -49,6 +49,8 @@ export interface AgentSettings {
   temperature: number | null;
   /** 群里自身发言冷却秒数（0=关）：冷却期内不被唤醒，防刷屏 */
   groupSlowmodeSec: number;
+  /** 本地 agent：是否把工作目录文件同步到平台供网页查看/编辑（默认否，仅显示本地路径） */
+  syncFiles: boolean;
 }
 
 export const REPLY_LENGTHS = ["auto", "short", "normal", "detailed"] as const;
@@ -86,4 +88,5 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   replyMarkdown: null,
   temperature: null,
   groupSlowmodeSec: 0,
+  syncFiles: false,
 };

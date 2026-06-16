@@ -203,6 +203,21 @@ model AgentTask {
   @@index([agentId, status, createdAt])
 }
 
+/// 本地 agent 工作目录文件镜像（owner 开启同步后，连接器上传内容供网页查看/编辑；编辑回写到本机）
+model AgentFile {
+  id          String  @id @default(cuid())
+  agentId     String
+  /// 相对工作目录的路径，如 CLAUDE.md / memory/notes.md
+  path        String
+  content     String  @default("")
+  /// true = 网页改过、待连接器写回本机磁盘
+  pendingPush Boolean @default(false)
+  updatedAt   String
+
+  @@unique([agentId, path])
+  @@index([agentId])
+}
+
 model GroupMessage {
   id             String      @id @default(cuid())
   groupId        String
