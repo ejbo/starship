@@ -51,6 +51,15 @@ import {
   type IncomingMessage,
   type SendInput,
 } from "@/lib/message-service";
+import {
+  createAgentThread,
+  deleteAgentThread,
+  getThreadPage,
+  listAgentThreads,
+  renameAgentThread,
+  sendThreadMessage,
+  type AgentThreadView,
+} from "@/lib/thread-service";
 import { deleteMessage, editMessage, toggleReaction, type Scope } from "@/lib/chat-interactions";
 import { getSignals, reportRead, reportTyping, type ReadView, type TypingView } from "@/lib/signal-service";
 import { getVoiceRooms, heartbeatVoiceRooms, joinVoiceRoom, leaveVoiceRoom, setMic, type VoiceRoomSnapshot } from "@/lib/voice-room-service";
@@ -64,6 +73,27 @@ export async function loadConversationAction(handle: string, beforeIso?: string)
 
 export async function sendMessageAction(handle: string, body: string, input?: SendInput): Promise<ChatMessage> {
   return sendMessage(handle, body, input);
+}
+
+// —— Agent 多会话（线程） ——
+
+export async function listAgentThreadsAction(handle: string): Promise<AgentThreadView[]> {
+  return listAgentThreads(handle);
+}
+export async function createAgentThreadAction(handle: string): Promise<AgentThreadView> {
+  return createAgentThread(handle);
+}
+export async function renameAgentThreadAction(threadId: string, title: string): Promise<void> {
+  await renameAgentThread(threadId, title);
+}
+export async function deleteAgentThreadAction(threadId: string): Promise<void> {
+  await deleteAgentThread(threadId);
+}
+export async function loadThreadAction(threadId: string, beforeIso?: string): Promise<ConversationPage> {
+  return getThreadPage(threadId, beforeIso);
+}
+export async function sendThreadMessageAction(threadId: string, body: string, input?: SendInput): Promise<ChatMessage> {
+  return sendThreadMessage(threadId, body, input);
 }
 
 export async function addFriendAction(handle: string): Promise<{ ok: boolean; error?: string }> {

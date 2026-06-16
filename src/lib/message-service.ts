@@ -58,6 +58,8 @@ export interface IncomingMessage {
   at: string;
   replyTo?: ReplyPreview | null;
   updatedAt?: string | null;
+  /** agent 私聊会话线程（客户端据此路由到对应对话）；null = 人类私聊 */
+  threadId?: string | null;
 }
 
 const PAGE_SIZE = 25;
@@ -179,21 +181,20 @@ export async function sendMessage(handle: string, body: string, input: SendInput
 /** 各好友发给我的未读消息数（恢复持久化未读角标用） */
 export async function getUnreadCounts(): Promise<Record<string, number>> {
   const userId = await getSessionUserId();
+  // 按 (发送者, 线程) 分组：agent 私聊有 threadId → 角标键为 "t:<threadId>"；人类私聊 threadId 为 null → 键为发送者 handle
   const groups = await prisma.message.groupBy({
-    by: ["fromId"],
+    by: ["fromId", "threadId"],
     where: { toId: userId, read: false },
     _count: { id: true },
   });
   if (groups.length === 0) return {};
-  const users = await prisma.user.findMany({
-    where: { id: { in: groups.map((g) => g.fromId) } },
-    select: { id: true, handle: true },
-  });
+  const humanIds = [...new Set(groups.filter((g) => !g.threadId).map((g) => g.fromId))];
+  const users = humanIds.length > 0 ? await prisma.user.findMany({ where: { id: { in: humanIds } }, select: { id: true, handle: true } }) : [];
   const handleById = new Map(users.map((u) => [u.id, u.handle]));
   const counts: Record<string, number> = {};
   for (const g of groups) {
-    const h = handleById.get(g.fromId);
-    if (h) counts[h] = g._count.id;
+    const key = g.threadId ? `t:${g.threadId}` : handleById.get(g.fromId);
+    if (key) counts[key] = (counts[key] ?? 0) + g._count.id;
   }
   return counts;
 }
@@ -215,6 +216,7 @@ export async function getIncomingSince(sinceIso: string, untilIso: string): Prom
       attachmentName: true,
       at: true,
       updatedAt: true,
+      threadId: true,
       replyTo: replyToSelect,
       from: { select: { handle: true, name: true } },
     },
@@ -230,6 +232,7 @@ export async function getIncomingSince(sinceIso: string, untilIso: string): Prom
     at: r.at,
     replyTo: toReplyPreview(r.replyTo),
     updatedAt: r.updatedAt,
+    threadId: r.threadId,
   }));
 }
 

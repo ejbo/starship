@@ -27,19 +27,22 @@ export async function POST(req: Request) {
   let to = payload.to;
   let channelId = payload.channelId;
   let hops = 0;
+  let threadId: string | null = null;
   if (payload.taskId) {
     const task = await prisma.agentTask.findUnique({ where: { id: payload.taskId } });
     if (!task || task.agentId !== agent.id) return NextResponse.json({ error: "task_not_found" }, { status: 404 });
     hops = task.hops;
-    if (task.kind === "dm") to = task.fromHandle;
-    else channelId = task.channelId ?? undefined;
+    if (task.kind === "dm") {
+      to = task.fromHandle;
+      threadId = task.threadId;
+    } else channelId = task.channelId ?? undefined;
   }
 
   try {
     const id = channelId
       ? await agentSendGroup(agent.id, channelId, body, hops)
       : to
-        ? await agentSendDm(agent.id, to, body, hops)
+        ? await agentSendDm(agent.id, to, body, hops, threadId)
         : null;
     if (!id) return NextResponse.json({ error: "no_target", error_description: "需要 taskId / to / channelId 之一" }, { status: 400 });
     return NextResponse.json({ ok: true, id });

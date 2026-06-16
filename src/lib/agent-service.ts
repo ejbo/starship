@@ -394,6 +394,7 @@ export async function getAgentRuntimeConfig(agentId: string): Promise<{ model: s
 export interface AgentTaskView {
   id: string;
   kind: "dm" | "group";
+  threadId: string | null;
   fromHandle: string;
   fromName: string;
   body: string;
@@ -457,6 +458,7 @@ export async function claimTasks(agentId: string, max = 10): Promise<AgentTaskVi
     rows.map(async (r) => ({
       id: r.id,
       kind: r.kind as "dm" | "group",
+      threadId: r.threadId,
       fromHandle: r.fromHandle,
       fromName: r.fromName,
       body: r.body,
@@ -505,6 +507,8 @@ interface FanoutBase {
   attachmentName?: string | null;
   /** 触发该消息的 agent 链深（人类消息 = 0） */
   hops?: number;
+  /** agent 私聊会话线程（回复回到该线程） */
+  threadId?: string | null;
 }
 
 /** 私聊：发给 agent 的消息必达（仅 agent 的好友——实际即 owner——可唤醒，防陌生人刷 owner 出账） */
@@ -522,7 +526,7 @@ export async function fanoutDm(input: FanoutBase & { toId: string }): Promise<vo
   const s = getAgentSettings(to.agentSettings);
   if (input.fromKind === "agent" && !s.allowAgentMention) return; // 关闭了被其他 agent 唤醒
   if (!s.dmAutoReply && !bodyMentions(input.body, to.handle, to.name)) return; // 私聊非必回：要 @ 才回
-  await dispatchToAgent(to.id, to.agentKind ?? "local-claude", input, { kind: "dm" }, s.maxHops);
+  await dispatchToAgent(to.id, to.agentKind ?? "local-claude", input, { kind: "dm", threadId: input.threadId ?? null }, s.maxHops);
 }
 
 /** 群聊：仅被 @ 的 agent 成员被唤醒（@handle 或 @昵称） */
@@ -601,7 +605,7 @@ async function dispatchToAgent(
   agentId: string,
   agentKind: string,
   input: FanoutBase,
-  ctx: { kind: "dm" | "group"; groupId?: string; groupName?: string; channelId?: string; channelName?: string },
+  ctx: { kind: "dm" | "group"; threadId?: string | null; groupId?: string; groupName?: string; channelId?: string; channelName?: string },
   maxHops = DEFAULT_AGENT_SETTINGS.maxHops,
 ): Promise<void> {
   const hops = input.hops ?? 0;
@@ -611,6 +615,7 @@ async function dispatchToAgent(
     data: {
       agentId,
       kind: ctx.kind,
+      threadId: ctx.threadId ?? null,
       fromHandle: input.fromHandle,
       fromName: input.fromName,
       body: input.body,
@@ -649,7 +654,7 @@ async function assertAgentRate(agentId: string, limit: number): Promise<void> {
   if (dm + grp >= limit) throw new Error(`发送过快（>${limit} 条/分钟），稍后再试`);
 }
 
-export async function agentSendDm(agentId: string, toHandle: string, body: string, hops: number): Promise<string> {
+export async function agentSendDm(agentId: string, toHandle: string, body: string, hops: number, threadId?: string | null): Promise<string> {
   const [agent, to] = await Promise.all([
     prisma.user.findUniqueOrThrow({ where: { id: agentId }, select: { id: true, handle: true, name: true, kind: true, agentSettings: true } }),
     prisma.user.findUnique({ where: { handle: toHandle }, select: { id: true } }),
@@ -664,11 +669,13 @@ export async function agentSendDm(agentId: string, toHandle: string, body: strin
   const clean = body.trim();
   if (!clean) throw new Error("消息不能为空");
 
+  const at = new Date().toISOString();
   const created = await prisma.message.create({
-    data: { fromId: agentId, toId: to.id, body: clean, at: new Date().toISOString() },
+    data: { fromId: agentId, toId: to.id, body: clean, at, threadId: threadId ?? null },
     select: { id: true },
   });
-  await fanoutDm({ fromId: agentId, fromHandle: agent.handle, fromName: agent.name, fromKind: "agent", body: clean, hops, toId: to.id });
+  if (threadId) await prisma.agentThread.updateMany({ where: { id: threadId }, data: { lastAt: at } });
+  await fanoutDm({ fromId: agentId, fromHandle: agent.handle, fromName: agent.name, fromKind: "agent", body: clean, hops, toId: to.id, threadId });
   return created.id;
 }
 
@@ -722,8 +729,11 @@ async function runHostedTask(agentId: string, taskId: string): Promise<void> {
   if (task.kind === "dm") {
     const from = await prisma.user.findUnique({ where: { handle: task.fromHandle }, select: { id: true } });
     if (!from) return;
+    // 多会话：上下文限定在该任务所属线程（各对话上下文独立）；无线程（历史）则退回整段私聊
     const rows = await prisma.message.findMany({
-      where: { OR: [{ fromId: agentId, toId: from.id }, { fromId: from.id, toId: agentId }] },
+      where: task.threadId
+        ? { threadId: task.threadId }
+        : { OR: [{ fromId: agentId, toId: from.id }, { fromId: from.id, toId: agentId }] },
       orderBy: { at: "desc" },
       take: settings.contextMsgs,
       select: { body: true, fromId: true, from: { select: { name: true } } },
@@ -787,6 +797,6 @@ async function runHostedTask(agentId: string, taskId: string): Promise<void> {
     await setAgentActivity(agentId, "");
   }
 
-  if (task.kind === "dm") await agentSendDm(agentId, task.fromHandle, reply, task.hops);
+  if (task.kind === "dm") await agentSendDm(agentId, task.fromHandle, reply, task.hops, task.threadId);
   else if (task.channelId) await agentSendGroup(agentId, task.channelId, reply, task.hops);
 }

@@ -382,7 +382,8 @@ const main = async () => {
     for (const task of pending) {
       const preview = task.body.replace(/\s+/g, " ").slice(0, 30);
       log(`▶ ${task.kind === "dm" ? "私聊" : `#${task.channelName}`} ${task.fromName}: ${preview}…`);
-      const convKey = task.kind === "dm" ? `dm:${task.fromHandle}` : `ch:${task.channelId}`;
+      // 多会话：每个对话线程映射独立的本地 CLI session（上下文相互独立）
+      const convKey = task.kind === "dm" ? `dm:${task.fromHandle}:${task.threadId ?? "0"}` : `ch:${task.channelId}`;
       try {
         await api("/api/v1/agent/activity", { method: "POST", body: JSON.stringify({ detail: `正在处理：${preview}` }) });
         const reply = (await exec(buildPrompt(agent, task), convKey)) || "（没有产出回复）";
