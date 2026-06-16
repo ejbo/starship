@@ -95,6 +95,7 @@ export function SocialLayer({
   const [unread, setUnread] = useState<Record<string, number>>({});
   const [markers, setMarkers] = useState<Record<string, string | null>>({});
   const [mutedGroups, setMutedGroups] = useState<Set<string>>(new Set());
+  const [mutedChannels, setMutedChannels] = useState<Set<string>>(new Set());
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [modal, setModal] = useState<ModalState | null>(null);
@@ -122,6 +123,8 @@ export function SocialLayer({
   conversationsRef.current = conversations;
   const mutedRef = useRef(mutedGroups);
   mutedRef.current = mutedGroups;
+  const mutedChannelsRef = useRef(mutedChannels);
+  mutedChannelsRef.current = mutedChannels;
   const markersRef = useRef(markers);
   markersRef.current = markers;
   const openChatsRef = useRef(openChats);
@@ -176,6 +179,7 @@ export function SocialLayer({
   // localStorage 按账号命名空间（同机切换账号不串台）
   const DOCK_KEY = `starport_dock_state:${me.handle}`;
   const MUTE_KEY = `starport_muted_groups:${me.handle}`;
+  const MUTE_CH_KEY = `starport_muted_channels:${me.handle}`;
 
   // —— 恢复坞/会话开关状态（跨刷新保留） ——
   useEffect(() => {
@@ -190,6 +194,8 @@ export function SocialLayer({
       }
       const muted = localStorage.getItem(MUTE_KEY);
       if (muted) setMutedGroups(new Set(JSON.parse(muted)));
+      const mutedCh = localStorage.getItem(MUTE_CH_KEY);
+      if (mutedCh) setMutedChannels(new Set(JSON.parse(mutedCh)));
     } catch {
       /* ignore */
     }
@@ -540,7 +546,7 @@ export function SocialLayer({
           const watching = activeChatRef.current === chatKey && effective === m.channelId;
           if (!watching) {
             markUnread(chatKey, convKey, m.id);
-            if (!mutedRef.current.has(m.groupId)) {
+            if (!mutedRef.current.has(m.groupId) && !mutedChannelsRef.current.has(m.channelId)) {
               pushToast(`${g?.name ?? "群组"} · ${m.sender.name}`, preview(m.kind, m.body, m.attachmentName), chatKey);
               playPing();
             }
@@ -757,6 +763,21 @@ export function SocialLayer({
     });
   }, []);
 
+  const toggleMuteChannel = useCallback((channelId: string) => {
+    setMutedChannels((cur) => {
+      const next = new Set(cur);
+      if (next.has(channelId)) next.delete(channelId);
+      else next.add(channelId);
+      try {
+        localStorage.setItem(MUTE_CH_KEY, JSON.stringify([...next]));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const onContextMenu = useCallback((e: React.MouseEvent, friend: Friend) => {
     e.preventDefault();
     setMenu({ friend, x: e.clientX, y: e.clientY });
@@ -782,6 +803,7 @@ export function SocialLayer({
         markers={markers}
         channelSel={channelSel}
         mutedGroups={mutedGroups}
+        mutedChannels={mutedChannels}
         typing={typing}
         reads={reads}
         voiceRooms={voiceRooms}
@@ -794,6 +816,7 @@ export function SocialLayer({
         onSelectChannel={selectChannel}
         onInvite={(groupId, preselect) => setModal(groupId ? { mode: "invite", groupId } : { mode: "create", preselect })}
         onToggleMute={toggleMute}
+        onToggleMuteChannel={toggleMuteChannel}
         onOpenChat={openChat}
         onGroupsChanged={refreshGroups}
         onReact={reactMessage}

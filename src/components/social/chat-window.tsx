@@ -103,6 +103,7 @@ interface ChatWindowProps {
   /** groupId → 当前选中频道 id */
   channelSel: Record<string, string>;
   mutedGroups: Set<string>;
+  mutedChannels: Set<string>;
   /** convKey → 正在输入的人 */
   typing: Record<string, { handle: string; name: string }[]>;
   /** DM convKey → 对方已读到的消息时刻 */
@@ -120,6 +121,7 @@ interface ChatWindowProps {
   /** groupId 为空 = 从私聊发起建群（预选当前好友） */
   onInvite: (groupId: string | null, preselect: string[]) => void;
   onToggleMute: (groupId: string) => void;
+  onToggleMuteChannel: (channelId: string) => void;
   onOpenChat: (handle: string) => void;
   onGroupsChanged: () => Promise<unknown>;
   onReact: (convKey: string, messageId: string, emoji: string) => void;
@@ -861,9 +863,11 @@ export function ChatWindow(props: ChatWindowProps) {
                   group={activeGroup}
                   activeChannelId={activeChannelId}
                   unread={unread}
+                  mutedChannels={props.mutedChannels}
                   voiceRooms={props.voiceRooms}
                   myVoiceRoom={props.myVoiceRoom}
                   onSelect={(cid) => props.onSelectChannel(activeGroup.id, cid)}
+                  onToggleMuteChannel={props.onToggleMuteChannel}
                   onJoinVoice={props.onJoinVoice}
                   onLeaveVoice={props.onLeaveVoice}
                   onToggleMic={props.onToggleMic}
@@ -1019,9 +1023,11 @@ function ChannelSidebar({
   group,
   activeChannelId,
   unread,
+  mutedChannels,
   voiceRooms,
   myVoiceRoom,
   onSelect,
+  onToggleMuteChannel,
   onJoinVoice,
   onLeaveVoice,
   onToggleMic,
@@ -1030,9 +1036,11 @@ function ChannelSidebar({
   group: GroupSummary;
   activeChannelId: string | null;
   unread: Record<string, number>;
+  mutedChannels: Set<string>;
   voiceRooms: Record<string, VoiceRoomSnapshot["members"]>;
   myVoiceRoom: string | null;
   onSelect: (channelId: string) => void;
+  onToggleMuteChannel: (channelId: string) => void;
   onJoinVoice: (roomId: string) => void;
   onLeaveVoice: (roomId: string) => void;
   onToggleMic: (roomId: string, micOn: boolean) => void;
@@ -1089,20 +1097,30 @@ function ChannelSidebar({
       <p className="px-3 pb-1 pt-1 text-[10px] font-semibold tracking-wide text-mute">文字频道</p>
       {texts.map((c) => {
         const hasUnread = (unread[channelConvKey(c.id)] ?? 0) > 0 && c.id !== activeChannelId;
+        const muted = mutedChannels.has(c.id);
         return (
-          <button
+          <div
             key={c.id}
-            onClick={() => onSelect(c.id)}
             className={cn(
-              "mx-1 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors",
+              "group/ch mx-1 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] transition-colors",
               c.id === activeChannelId ? "bg-card-hi font-medium text-ink" : "text-dim hover:bg-card-hi/60",
               hasUnread && "font-semibold text-ink",
             )}
           >
-            <Hash className="size-3.5 shrink-0 text-mute" />
-            <span className="truncate">{c.name}</span>
-            {hasUnread && <span className="ml-auto size-1.5 shrink-0 rounded-full bg-accent" />}
-          </button>
+            <button onClick={() => onSelect(c.id)} className="flex min-w-0 grow items-center gap-1.5 text-left">
+              <Hash className={cn("size-3.5 shrink-0", muted ? "text-mute/50" : "text-mute")} />
+              <span className={cn("truncate", muted && "text-mute/60")}>{c.name}</span>
+            </button>
+            {hasUnread && !muted && <span className="size-1.5 shrink-0 rounded-full bg-accent" />}
+            <button
+              onClick={() => onToggleMuteChannel(c.id)}
+              className={cn("shrink-0 rounded p-0.5 transition-colors hover:text-ink", muted ? "text-mute" : "text-mute opacity-0 group-hover/ch:opacity-100")}
+              title={muted ? "取消免打扰" : "免打扰此频道（不弹提醒）"}
+              aria-label="频道免打扰"
+            >
+              {muted ? <BellOff className="size-3" /> : <Bell className="size-3" />}
+            </button>
+          </div>
         );
       })}
       <div className="px-1">{addRow("text", "添加文字频道")}</div>
