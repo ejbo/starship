@@ -241,6 +241,8 @@ export interface AgentIdentity {
   agentKind: string;
   persona: string | null;
   ownerName: string;
+  /** 当前设置的模型（raw，null=用 CLI 默认）；连接器据此每次任务用 -m/--model 实时切换 */
+  model: string | null;
 }
 
 /** Bearer spa_xxx → agent；顺带刷新连接器在线时间。agentTokenHash 有唯一索引，findUnique 命中索引 */
@@ -248,13 +250,21 @@ export async function authAgentToken(token: string): Promise<AgentIdentity | nul
   if (!token.startsWith("spa_")) return null;
   const u = await prisma.user.findUnique({
     where: { agentTokenHash: hashToken(token) },
-    select: { id: true, handle: true, name: true, kind: true, agentKind: true, agentPersona: true, agentOwnerId: true },
+    select: { id: true, handle: true, name: true, kind: true, agentKind: true, agentPersona: true, agentOwnerId: true, agentSettings: true },
   });
   if (!u || u.kind !== "agent") return null;
   const owner = u.agentOwnerId
     ? await prisma.user.findUnique({ where: { id: u.agentOwnerId }, select: { name: true } })
     : null;
-  return { id: u.id, handle: u.handle, name: u.name, agentKind: u.agentKind ?? "local-claude", persona: u.agentPersona, ownerName: owner?.name ?? "" };
+  return {
+    id: u.id,
+    handle: u.handle,
+    name: u.name,
+    agentKind: u.agentKind ?? "local-claude",
+    persona: u.agentPersona,
+    ownerName: owner?.name ?? "",
+    model: getAgentSettings(u.agentSettings).model,
+  };
 }
 
 export async function touchAgentPoll(agentId: string): Promise<void> {

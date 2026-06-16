@@ -38,6 +38,8 @@ const BACKEND = opt("backend", "claude");
 const FULL_AUTO = has("full-auto");
 const ISOLATE = has("isolate"); // 每个 agent 独立 config/记忆/登录沙箱
 const MODEL = opt("model");
+// 实时模型：以平台 agent 设置为准（每次收件刷新），用户在网页切换模型即时生效；启动 --model 仅作初值
+let liveModel = MODEL || null;
 const TASK_TIMEOUT_MS = 10 * 60 * 1000;
 let childEnv = process.env; // 默认继承环境；--isolate 时改为 per-agent 沙箱
 
@@ -129,7 +131,7 @@ function run(cmd, argv, input, cwd) {
 async function runClaude(prompt, convKey) {
   const argv = ["-p", "--output-format", "json"];
   argv.push(FULL_AUTO ? "--dangerously-skip-permissions" : "--permission-mode", ...(FULL_AUTO ? [] : ["acceptEdits"]));
-  if (MODEL) argv.push("--model", MODEL);
+  if (liveModel) argv.push("--model", liveModel);
   if (sessions[convKey]) argv.push("--resume", sessions[convKey]);
   let out;
   try {
@@ -155,7 +157,7 @@ async function runCodex(prompt, convKey) {
   const base = sessions[convKey] ? ["exec", "resume", sessions[convKey]] : ["exec"];
   const argv = [...base, "--json", "--skip-git-repo-check"];
   if (FULL_AUTO) argv.push("--dangerously-bypass-approvals-and-sandbox");
-  if (MODEL) argv.push("-m", MODEL);
+  if (liveModel) argv.push("-m", liveModel);
   argv.push("-"); // stdin 提示词
   let out;
   try {
@@ -191,7 +193,7 @@ async function runCodex(prompt, convKey) {
 async function runGemini(prompt) {
   const argv = [];
   if (FULL_AUTO) argv.push("--yolo");
-  if (MODEL) argv.push("--model", MODEL);
+  if (liveModel) argv.push("--model", liveModel);
   const out = await run("gemini", argv, prompt, DIR);
   return out.trim();
 }
@@ -200,7 +202,7 @@ async function runGemini(prompt) {
 async function runQwen(prompt) {
   const argv = [];
   if (FULL_AUTO) argv.push("--yolo");
-  if (MODEL) argv.push("--model", MODEL);
+  if (liveModel) argv.push("--model", liveModel);
   const out = await run("qwen", argv, prompt, DIR);
   return out.trim();
 }
@@ -246,6 +248,8 @@ const main = async () => {
     throw e;
   }
   const agent = first.agent;
+  // 平台设置的模型为准（覆盖启动 --model）
+  if (agent.model !== undefined) liveModel = agent.model || null;
   DIR = resolve(DIR ?? join(process.cwd(), "starport-agents", agent.handle));
   mkdirSync(DIR, { recursive: true });
   sessionsFile = join(DIR, ".starport-sessions.json");
@@ -326,6 +330,14 @@ const main = async () => {
     }
     try {
       const res = await api("/api/v1/agent/inbox?wait=20");
+      // 实时同步模型：用户在网页切换/清空后，下次收件即生效（每个任务用新 model 起 CLI）
+      if (res.agent && res.agent.model !== undefined) {
+        const next = res.agent.model || null;
+        if (next !== liveModel) {
+          liveModel = next;
+          log(`模型已切换为 ${liveModel || "(CLI 默认)"}`);
+        }
+      }
       pending = res.tasks ?? [];
       backoff = 2000;
     } catch (e) {

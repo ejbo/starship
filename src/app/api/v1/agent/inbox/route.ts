@@ -27,7 +27,7 @@ export async function GET(req: Request) {
   if (tasks.length > 0) await touchAgentPoll(agent.id);
 
   return NextResponse.json({
-    agent: { handle: agent.handle, name: agent.name, kind: agent.agentKind, persona: agent.persona, owner: agent.ownerName },
+    agent: { handle: agent.handle, name: agent.name, kind: agent.agentKind, persona: agent.persona, owner: agent.ownerName, model: agent.model },
     tasks,
   });
 }
