@@ -69,6 +69,8 @@ model User {
   agentLastPollAt String?
   /// agent 可调设置（JSON）：provider/model/contextMsgs/maxHops/rateLimit/allowAgentMention/dmAutoReply/groupProactive/fullAuto/isolate
   agentSettings   Json?
+  /// 用户偏好（JSON）：{ agentDefaults: 新建 agent 的统一默认配置, agentPhrases: 自定义"正在回答"文案库 }
+  prefs           Json?
   library      LibraryEntry[]
   wishlist     WishlistEntry[]
   creditTxns   CreditTransaction[]

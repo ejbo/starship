@@ -6,10 +6,12 @@ import {
   deleteAgent,
   getAgentDetail,
   getAgentToken,
+  getMyAgentDefaults,
   listAgentFiles,
   renameAgent,
   resetAgentToken,
   saveAgentFile,
+  saveMyAgentDefaults,
   updateAgent,
   updateAgentPersona,
   type AgentFileView,
@@ -17,6 +19,21 @@ import {
   type CreatedAgent,
 } from "@/lib/agent-service";
 import type { AgentSettings } from "@/lib/agent-shared";
+
+/** 取我的统一默认 agent 配置 + 自定义文案库（新建弹窗预填、设置页编辑） */
+export async function getMyAgentDefaultsAction(): Promise<{ settings: AgentSettings; phrases: string[] }> {
+  return getMyAgentDefaults();
+}
+
+/** 保存我的统一默认 agent 配置 + 自定义文案库 */
+export async function saveMyAgentDefaultsAction(settings: Partial<AgentSettings>, phrases: string[]): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await saveMyAgentDefaults(settings, phrases);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "保存失败" };
+  }
+}
 
 /** owner 查看 agent 同步上来的工作目录文件 */
 export async function getAgentFilesAction(handle: string): Promise<{ ok: boolean; files?: AgentFileView[]; error?: string }> {

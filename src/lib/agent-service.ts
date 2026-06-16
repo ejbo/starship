@@ -63,6 +63,39 @@ export function replyStyleInstruction(s: AgentSettings): string {
   return parts.length ? `回复风格：${parts.join("；")}。` : "";
 }
 
+// —— 用户级偏好：新建 agent 的统一默认配置 + 自定义"正在回答"文案库 ——
+
+interface UserPrefs {
+  agentDefaults?: Partial<AgentSettings>;
+  agentPhrases?: string[];
+}
+function parseUserPrefs(raw: unknown): UserPrefs {
+  const p = raw && typeof raw === "object" ? (raw as UserPrefs) : {};
+  return {
+    agentDefaults: p.agentDefaults && typeof p.agentDefaults === "object" ? p.agentDefaults : undefined,
+    agentPhrases: Array.isArray(p.agentPhrases) ? p.agentPhrases.filter((x): x is string => typeof x === "string") : undefined,
+  };
+}
+
+export async function getMyAgentDefaults(): Promise<{ settings: AgentSettings; phrases: string[] }> {
+  const userId = await getSessionUserId();
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { prefs: true } });
+  const p = parseUserPrefs(u?.prefs);
+  return { settings: getAgentSettings(p.agentDefaults ?? {}), phrases: p.agentPhrases ?? [] };
+}
+
+export async function saveMyAgentDefaults(settings: Partial<AgentSettings>, phrases: string[]): Promise<void> {
+  const userId = await getSessionUserId();
+  const merged = getAgentSettings(settings);
+  const cleanPhrases = (Array.isArray(phrases) ? phrases : [])
+    .map((s) => String(s).trim().slice(0, 40))
+    .filter(Boolean)
+    .slice(0, 50);
+  const cur = await prisma.user.findUnique({ where: { id: userId }, select: { prefs: true } });
+  const base = cur?.prefs && typeof cur.prefs === "object" ? (cur.prefs as object) : {};
+  await prisma.user.update({ where: { id: userId }, data: { prefs: { ...base, agentDefaults: merged, agentPhrases: cleanPhrases } as object } });
+}
+
 // —— 创建 / 管理 ——
 
 export interface CreatedAgent {
@@ -109,7 +142,9 @@ export async function createAgent(input: {
   const handle = await uniqueAgentHandle(name);
   const token = input.agentKind === "hosted" ? undefined : newToken();
   const now = new Date().toISOString();
-  const settings = getAgentSettings(input.settings);
+  // 新建时套用用户的统一默认配置作基底，再叠加本次传入的覆盖
+  const ownerPrefs = parseUserPrefs((await prisma.user.findUnique({ where: { id: ownerId }, select: { prefs: true } }))?.prefs);
+  const settings = getAgentSettings({ ...(ownerPrefs.agentDefaults ?? {}), ...(input.settings ?? {}) });
 
   const agent = await prisma.user.create({
     data: {
@@ -440,13 +475,20 @@ export async function claimTasks(agentId: string, max = 10): Promise<AgentTaskVi
 
 /** 连接器上报富状态（聊天里显示「正在处理…」）；detail 空 = 清除 */
 export async function setAgentActivity(agentId: string, detail: string): Promise<void> {
-  // detail 仅作「在忙/不忙」信号——忙时存一条随机可爱文案（不存连接器传来的消息预览，避免在好友列表泄露对话内容）
+  // detail 仅作「在忙/不忙」信号——忙时存一条随机可爱文案（内置库 + owner 自定义库），
+  // 不存连接器传来的消息预览，避免在好友列表泄露对话内容
   const working = detail.trim().length > 0;
   const now = new Date().toISOString();
+  let phrase: string | null = null;
+  if (working) {
+    const a = await prisma.user.findUnique({ where: { id: agentId }, select: { agentOwnerId: true } });
+    const owner = a?.agentOwnerId ? await prisma.user.findUnique({ where: { id: a.agentOwnerId }, select: { prefs: true } }) : null;
+    phrase = pickActivityPhrase(parseUserPrefs(owner?.prefs).agentPhrases ?? []);
+  }
   await prisma.user.update({
     where: { id: agentId },
     data: working
-      ? { currentActivity: pickActivityPhrase(), currentActivitySlug: null, activityAt: now, lastSeenAt: now }
+      ? { currentActivity: phrase, currentActivitySlug: null, activityAt: now, lastSeenAt: now }
       : { currentActivity: null, activityAt: null, lastSeenAt: now },
   });
 }

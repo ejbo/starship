@@ -6,6 +6,7 @@ import {
   createAgentAction,
   getAgentDetailAction,
   getAgentFilesAction,
+  getMyAgentDefaultsAction,
   saveAgentFileAction,
   updateAgentPersonaAction,
   updateAgentSettingsAction,
@@ -179,7 +180,7 @@ function NumberRow({ label, hint, value, min, max, onChange }: { label: string; 
 }
 
 /** 托管：provider 下拉 + 模型可选（带常用模型建议）；本地：仅模型（按后端建议，透传到对应 CLI 的 --model/-m） */
-function ProviderModel({
+export function ProviderModel({
   isHosted,
   agentKind,
   provider,
@@ -333,14 +334,16 @@ function AgentFilesModal({ handle, name, syncOn, agentKind, onClose }: { handle:
 }
 
 /** 折叠的高级设置（上下文/唤醒/限速/本地权限） */
-function AdvancedSettings({ settings, isLocal, onChange }: { settings: AgentSettings; isLocal: boolean; onChange: (patch: Partial<AgentSettings>) => void }) {
-  const [open, setOpen] = useState(false);
+export function AdvancedSettings({ settings, isLocal, onChange, showAll = false, defaultOpen = false }: { settings: AgentSettings; isLocal: boolean; onChange: (patch: Partial<AgentSettings>) => void; showAll?: boolean; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const showHosted = showAll || !isLocal;
+  const showLocal = showAll || isLocal;
   return (
     <div className="rounded-lg border border-line">
       <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-1.5 px-3 py-2 text-xs font-medium text-dim transition-colors hover:text-ink">
         <ChevronDown className={cn("size-3.5 transition-transform", !open && "-rotate-90")} />
         高级设置
-        <span className="ml-auto text-[11px] text-mute">上下文 / 唤醒 / 限速{isLocal ? " / 权限" : ""}</span>
+        <span className="ml-auto text-[11px] text-mute">上下文 / 唤醒 / 限速{showLocal ? " / 权限" : ""}</span>
       </button>
       {open && (
         <div className="space-y-0.5 border-t border-line px-2 py-2">
@@ -351,9 +354,9 @@ function AdvancedSettings({ settings, isLocal, onChange }: { settings: AgentSett
           <NumberRow label="互相 @ 链深上限" hint="Agent 之间最多接力几层" value={settings.maxHops} min={0} max={20} onChange={(v) => onChange({ maxHops: v })} />
           <NumberRow label="限速（条 / 分钟）" value={settings.rateLimit} min={1} max={120} onChange={(v) => onChange({ rateLimit: v })} />
           <NumberRow label="群发言冷却（秒）" hint="0=关；冷却期内不被唤醒，防刷屏" value={settings.groupSlowmodeSec} min={0} max={3600} onChange={(v) => onChange({ groupSlowmodeSec: v })} />
-          {!isLocal && (
+          {showHosted && (
             <>
-              <div className="px-1 pt-1.5 text-[11px] font-medium text-mute">回复风格</div>
+              <div className="px-1 pt-1.5 text-[11px] font-medium text-mute">回复风格{showAll ? "（托管 agent 生效）" : ""}</div>
               <SelectRow label="回复长度" value={settings.replyLength} options={REPLY_LENGTHS.map((v) => [v, REPLY_LENGTH_LABELS[v]] as [string, string])} onChange={(v) => onChange({ replyLength: v })} />
               <TextRow label="回复语言" hint="留空=跟随对方" value={settings.replyLanguage} placeholder="跟随对方" onChange={(v) => onChange({ replyLanguage: v })} />
               <SelectRow
@@ -383,8 +386,9 @@ function AdvancedSettings({ settings, isLocal, onChange }: { settings: AgentSett
               </div>
             </>
           )}
-          {isLocal && (
+          {showLocal && (
             <>
+              {showAll && <div className="px-1 pt-1.5 text-[11px] font-medium text-mute">本地 agent 生效</div>}
               <Toggle label="默认放开全部工具（--full-auto）" checked={settings.fullAuto} onChange={(v) => onChange({ fullAuto: v })} />
               <Toggle label="独立配置沙箱（--isolate）" checked={settings.isolate} onChange={(v) => onChange({ isolate: v })} />
               <Toggle label="同步工作目录文件到平台" hint="开启后可在网页查看/编辑 TA 的人设与记忆文件，编辑会写回本机" checked={settings.syncFiles} onChange={(v) => onChange({ syncFiles: v })} />
@@ -541,6 +545,11 @@ export function AgentModal({
   const [done, setDone] = useState<{ handle: string; name: string; command?: ConnectorCommand } | null>(null);
   const isHosted = kind === "hosted";
   const patchSettings = (p: Partial<AgentSettings>) => setSettings((s) => ({ ...s, ...p }));
+
+  // 预填用户的统一默认配置（在设置里设过一次，新建就不用重复录入）
+  useEffect(() => {
+    getMyAgentDefaultsAction().then((d) => setSettings(d.settings)).catch(() => {});
+  }, []);
 
   const create = async () => {
     if (!name.trim() || busy) return;

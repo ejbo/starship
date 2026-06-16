@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, KeyRound, UserCog } from "lucide-react";
+import { BarChart3, Bot, KeyRound, UserCog } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 const tabs = [
   { href: "/settings/profile", label: "个人资料", icon: UserCog },
   { href: "/settings/gateway", label: "API 配置中心", icon: KeyRound },
+  { href: "/settings/agents", label: "Agent 默认", icon: Bot },
   { href: "/settings/usage", label: "用量看板", icon: BarChart3 },
 ];
 
