@@ -32,6 +32,8 @@ export interface GatewayChatInput {
   userId: string;
   provider: string;
   model?: string;
+  /** 采样温度（0–2）；不传用 provider 默认 */
+  temperature?: number;
   prompt: string;
   /** 计入哪个应用的用量 */
   productSlug: string;
@@ -113,9 +115,10 @@ export async function runGatewayChat(input: GatewayChatInput): Promise<GatewayCh
 
   const model = input.model?.trim() || defaultModel[provider] || "default";
 
+  const temperature = input.temperature;
   let result;
   try {
-    result = await callProvider(provider, key, model, prompt);
+    result = await callProvider(provider, key, model, prompt, temperature);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "上游调用失败";
     // 上游说该模型不存在/无权限 → 退回该 provider 实测可用的默认模型，保证有回复（不让整条对话直接失败）
@@ -123,7 +126,7 @@ export async function runGatewayChat(input: GatewayChatInput): Promise<GatewayCh
     const modelMissing = /not[\s_-]?found|does not exist|do not have access|no such model|unsupported.*model|invalid.*model|未找到|不存在|无权限/i.test(msg);
     if (fb && model !== fb && modelMissing) {
       try {
-        result = await callProvider(provider, key, fb, prompt);
+        result = await callProvider(provider, key, fb, prompt, temperature);
       } catch (e2) {
         throw new GatewayError("upstream", e2 instanceof Error ? e2.message : "上游调用失败");
       }

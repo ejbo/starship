@@ -28,7 +28,7 @@ function withTimeout(): { signal: AbortSignal; cancel: () => void } {
   return { signal: ctrl.signal, cancel: () => clearTimeout(t) };
 }
 
-export async function callAnthropic(key: string, model: string, prompt: string): Promise<AdapterResult> {
+export async function callAnthropic(key: string, model: string, prompt: string, temperature?: number): Promise<AdapterResult> {
   const { signal, cancel } = withTimeout();
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -41,6 +41,7 @@ export async function callAnthropic(key: string, model: string, prompt: string):
       body: JSON.stringify({
         model,
         max_tokens: 4096,
+        ...(temperature != null ? { temperature } : {}),
         messages: [{ role: "user", content: prompt }],
       }),
       signal,
@@ -63,13 +64,13 @@ export async function callAnthropic(key: string, model: string, prompt: string):
  * OpenAI 兼容的 /chat/completions 通用调用：OpenAI、Gemini（v1beta/openai）、xAI 均走此格式。
  * baseUrl 不含末尾斜杠，会自动拼 /chat/completions。
  */
-async function callOpenAICompatible(baseUrl: string, key: string, model: string, prompt: string): Promise<AdapterResult> {
+async function callOpenAICompatible(baseUrl: string, key: string, model: string, prompt: string, temperature?: number): Promise<AdapterResult> {
   const { signal, cancel } = withTimeout();
   try {
     const res = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }] }),
+      body: JSON.stringify({ model, ...(temperature != null ? { temperature } : {}), messages: [{ role: "user", content: prompt }] }),
       signal,
     });
     const data = await res.json();
@@ -86,52 +87,52 @@ async function callOpenAICompatible(baseUrl: string, key: string, model: string,
   }
 }
 
-export function callOpenAI(key: string, model: string, prompt: string): Promise<AdapterResult> {
-  return callOpenAICompatible("https://api.openai.com/v1", key, model, prompt);
+export function callOpenAI(key: string, model: string, prompt: string, temperature?: number): Promise<AdapterResult> {
+  return callOpenAICompatible("https://api.openai.com/v1", key, model, prompt, temperature);
 }
 
 /** Gemini：用 Google 的 OpenAI 兼容端点（实测返回 OpenAI 格式 + usage） */
-export function callGoogle(key: string, model: string, prompt: string): Promise<AdapterResult> {
-  return callOpenAICompatible("https://generativelanguage.googleapis.com/v1beta/openai", key, model, prompt);
+export function callGoogle(key: string, model: string, prompt: string, temperature?: number): Promise<AdapterResult> {
+  return callOpenAICompatible("https://generativelanguage.googleapis.com/v1beta/openai", key, model, prompt, temperature);
 }
 
 /** xAI Grok：原生 OpenAI 兼容 */
-export function callXai(key: string, model: string, prompt: string): Promise<AdapterResult> {
-  return callOpenAICompatible("https://api.x.ai/v1", key, model, prompt);
+export function callXai(key: string, model: string, prompt: string, temperature?: number): Promise<AdapterResult> {
+  return callOpenAICompatible("https://api.x.ai/v1", key, model, prompt, temperature);
 }
 
 /** DeepSeek：原生 OpenAI 兼容 */
-export function callDeepseek(key: string, model: string, prompt: string): Promise<AdapterResult> {
-  return callOpenAICompatible("https://api.deepseek.com/v1", key, model, prompt);
+export function callDeepseek(key: string, model: string, prompt: string, temperature?: number): Promise<AdapterResult> {
+  return callOpenAICompatible("https://api.deepseek.com/v1", key, model, prompt, temperature);
 }
 
 /** 智谱 GLM：OpenAI 兼容端点（paas/v4） */
-export function callZhipu(key: string, model: string, prompt: string): Promise<AdapterResult> {
-  return callOpenAICompatible("https://open.bigmodel.cn/api/paas/v4", key, model, prompt);
+export function callZhipu(key: string, model: string, prompt: string, temperature?: number): Promise<AdapterResult> {
+  return callOpenAICompatible("https://open.bigmodel.cn/api/paas/v4", key, model, prompt, temperature);
 }
 
 /** 通义千问 Qwen：阿里云 DashScope 的 OpenAI 兼容端点 */
-export function callQwen(key: string, model: string, prompt: string): Promise<AdapterResult> {
-  return callOpenAICompatible("https://dashscope.aliyuncs.com/compatible-mode/v1", key, model, prompt);
+export function callQwen(key: string, model: string, prompt: string, temperature?: number): Promise<AdapterResult> {
+  return callOpenAICompatible("https://dashscope.aliyuncs.com/compatible-mode/v1", key, model, prompt, temperature);
 }
 
 /** provider → 适配器；未实现的 provider 抛错由上层降级 */
-export async function callProvider(provider: string, key: string, model: string, prompt: string): Promise<AdapterResult> {
+export async function callProvider(provider: string, key: string, model: string, prompt: string, temperature?: number): Promise<AdapterResult> {
   switch (provider) {
     case "anthropic":
-      return callAnthropic(key, model, prompt);
+      return callAnthropic(key, model, prompt, temperature);
     case "openai":
-      return callOpenAI(key, model, prompt);
+      return callOpenAI(key, model, prompt, temperature);
     case "google":
-      return callGoogle(key, model, prompt);
+      return callGoogle(key, model, prompt, temperature);
     case "xai":
-      return callXai(key, model, prompt);
+      return callXai(key, model, prompt, temperature);
     case "deepseek":
-      return callDeepseek(key, model, prompt);
+      return callDeepseek(key, model, prompt, temperature);
     case "zhipu":
-      return callZhipu(key, model, prompt);
+      return callZhipu(key, model, prompt, temperature);
     case "qwen":
-      return callQwen(key, model, prompt);
+      return callQwen(key, model, prompt, temperature);
     default:
       throw new Error(`provider ${provider} 暂未接入真实调用`);
   }

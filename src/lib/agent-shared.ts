@@ -39,7 +39,20 @@ export interface AgentSettings {
   fullAuto: boolean;
   /** 本地：生成命令默认带 --isolate（独立 config/登录沙箱） */
   isolate: boolean;
+  /** 回复长度偏好：auto（不限定）| short | normal | detailed */
+  replyLength: string;
+  /** 回复语言偏好：空=跟随对方语言 */
+  replyLanguage: string;
+  /** 是否用 markdown：null=自动 / true / false */
+  replyMarkdown: boolean | null;
+  /** 采样温度（仅托管，0–2 一位小数）：null=provider 默认 */
+  temperature: number | null;
+  /** 群里自身发言冷却秒数（0=关）：冷却期内不被唤醒，防刷屏 */
+  groupSlowmodeSec: number;
 }
+
+export const REPLY_LENGTHS = ["auto", "short", "normal", "detailed"] as const;
+export const REPLY_LENGTH_LABELS: Record<string, string> = { auto: "不限定", short: "简短", normal: "适中", detailed: "详细" };
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   provider: "anthropic",
@@ -53,4 +66,9 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   groupProactive: false,
   fullAuto: false,
   isolate: false,
+  replyLength: "auto",
+  replyLanguage: "",
+  replyMarkdown: null,
+  temperature: null,
+  groupSlowmodeSec: 0,
 };

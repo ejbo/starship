@@ -9,7 +9,7 @@ import {
   type ConnectorCommand,
 } from "@/app/agents-actions";
 import { Avatar } from "@/components/ui/avatar";
-import { DEFAULT_AGENT_SETTINGS, HOSTED_PROVIDERS, PROVIDER_LABELS, type AgentSettings } from "@/lib/agent-shared";
+import { DEFAULT_AGENT_SETTINGS, HOSTED_PROVIDERS, PROVIDER_LABELS, REPLY_LENGTHS, REPLY_LENGTH_LABELS, type AgentSettings } from "@/lib/agent-shared";
 import { copyText } from "@/lib/clipboard";
 import { imageToDataUrl } from "@/components/social/presence";
 import { cn } from "@/lib/cn";
@@ -134,6 +134,43 @@ function Toggle({ label, hint, checked, onChange }: { label: string; hint?: stri
   );
 }
 
+function SelectRow({ label, hint, value, options, onChange }: { label: string; hint?: string; value: string; options: [string, string][]; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-2 px-1 py-1">
+      <span className="min-w-0 grow leading-tight">
+        <span className="block text-[13px] text-ink">{label}</span>
+        {hint && <span className="block text-[11px] text-mute">{hint}</span>}
+      </span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="shrink-0 rounded-lg border border-line bg-page px-2 py-1 text-sm focus:border-accent focus:outline-none"
+      >
+        {options.map(([v, label]) => (
+          <option key={v} value={v}>{label}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function TextRow({ label, hint, value, placeholder, onChange }: { label: string; hint?: string; value: string; placeholder?: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-2 px-1 py-1">
+      <span className="min-w-0 grow leading-tight">
+        <span className="block text-[13px] text-ink">{label}</span>
+        {hint && <span className="block text-[11px] text-mute">{hint}</span>}
+      </span>
+      <input
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-24 shrink-0 rounded-lg border border-line bg-page px-2 py-1 text-sm focus:border-accent focus:outline-none"
+      />
+    </div>
+  );
+}
+
 function NumberRow({ label, hint, value, min, max, onChange }: { label: string; hint?: string; value: number; min: number; max: number; onChange: (v: number) => void }) {
   return (
     <div className="flex items-center gap-2 px-1 py-1">
@@ -225,6 +262,39 @@ function AdvancedSettings({ settings, isLocal, onChange }: { settings: AgentSett
           <Toggle label="群里不被 @ 也主动发言" hint="仅对真人消息生效，防 Agent 互刷" checked={settings.groupProactive} onChange={(v) => onChange({ groupProactive: v })} />
           <NumberRow label="互相 @ 链深上限" hint="Agent 之间最多接力几层" value={settings.maxHops} min={0} max={20} onChange={(v) => onChange({ maxHops: v })} />
           <NumberRow label="限速（条 / 分钟）" value={settings.rateLimit} min={1} max={120} onChange={(v) => onChange({ rateLimit: v })} />
+          <NumberRow label="群发言冷却（秒）" hint="0=关；冷却期内不被唤醒，防刷屏" value={settings.groupSlowmodeSec} min={0} max={3600} onChange={(v) => onChange({ groupSlowmodeSec: v })} />
+          {!isLocal && (
+            <>
+              <div className="px-1 pt-1.5 text-[11px] font-medium text-mute">回复风格</div>
+              <SelectRow label="回复长度" value={settings.replyLength} options={REPLY_LENGTHS.map((v) => [v, REPLY_LENGTH_LABELS[v]] as [string, string])} onChange={(v) => onChange({ replyLength: v })} />
+              <TextRow label="回复语言" hint="留空=跟随对方" value={settings.replyLanguage} placeholder="跟随对方" onChange={(v) => onChange({ replyLanguage: v })} />
+              <SelectRow
+                label="排版"
+                value={settings.replyMarkdown === null ? "auto" : settings.replyMarkdown ? "md" : "plain"}
+                options={[["auto", "自动"], ["md", "markdown"], ["plain", "纯文本"]]}
+                onChange={(v) => onChange({ replyMarkdown: v === "auto" ? null : v === "md" })}
+              />
+              <div className="flex items-center gap-2 px-1 py-1">
+                <span className="min-w-0 grow leading-tight">
+                  <span className="block text-[13px] text-ink">采样温度</span>
+                  <span className="block text-[11px] text-mute">越高越发散；留空用默认</span>
+                </span>
+                <input
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  max={2}
+                  value={settings.temperature ?? ""}
+                  placeholder="默认"
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    onChange({ temperature: v === "" ? null : Math.max(0, Math.min(2, Number(v))) });
+                  }}
+                  className="w-16 shrink-0 rounded-lg border border-line bg-page px-2 py-1 text-sm focus:border-accent focus:outline-none"
+                />
+              </div>
+            </>
+          )}
           {isLocal && (
             <>
               <Toggle label="默认放开全部工具（--full-auto）" checked={settings.fullAuto} onChange={(v) => onChange({ fullAuto: v })} />
