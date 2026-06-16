@@ -31,15 +31,17 @@ function Section({ title, children, action }: { title: string; children: React.R
   );
 }
 
-/** 单个频道的可展开编辑行（名/主题/慢速 + 删除 + 上下移） */
+/** 单个频道的可展开编辑行（名/主题/慢速/agent 范围 + 删除 + 上下移） */
 function ChannelRow({
   channel,
+  agents,
   canMoveUp,
   canMoveDown,
   onChanged,
   onMove,
 }: {
   channel: GroupChannel;
+  agents: { handle: string; name: string }[];
   canMoveUp: boolean;
   canMoveDown: boolean;
   onChanged: () => Promise<unknown>;
@@ -49,12 +51,14 @@ function ChannelRow({
   const [name, setName] = useState(channel.name);
   const [topic, setTopic] = useState(channel.topic);
   const [slow, setSlow] = useState(channel.slowmodeSec);
+  const [scope, setScope] = useState<string[]>(channel.agentScope);
   const [busy, setBusy] = useState(false);
   const Icon = channel.kind === "voice" ? Volume2 : Hash;
+  const toggleScope = (h: string) => setScope((s) => (s.includes(h) ? s.filter((x) => x !== h) : [...s, h]));
 
   const save = async () => {
     setBusy(true);
-    await updateChannelAction(channel.id, { name, topic, slowmodeSec: slow });
+    await updateChannelAction(channel.id, { name, topic, slowmodeSec: slow, agentScope: scope });
     setBusy(false);
     setOpen(false);
     await onChanged();
@@ -103,6 +107,29 @@ function ChannelRow({
                 <span className="text-[11px] text-dim">慢速模式（秒，0=关）</span>
                 <input type="number" min={0} max={21600} value={slow} onChange={(e) => setSlow(Math.max(0, Math.min(21600, Number(e.target.value) || 0)))} className="w-24 rounded-lg border border-line bg-page px-2.5 py-1.5 text-sm focus:border-accent focus:outline-none" />
               </label>
+              {agents.length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-[11px] text-dim">在此频道响应的 Agent（不选=全部）</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {agents.map((a) => {
+                      const on = scope.includes(a.handle);
+                      return (
+                        <button
+                          key={a.handle}
+                          type="button"
+                          onClick={() => toggleScope(a.handle)}
+                          className={cn(
+                            "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                            on ? "border-accent bg-accent/10 text-accent" : "border-line text-dim hover:border-accent/40",
+                          )}
+                        >
+                          {a.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </>
           )}
           <button onClick={save} disabled={busy} className="w-full rounded-lg bg-accent py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-deep disabled:opacity-50">
@@ -288,6 +315,7 @@ export function GroupSettingsModal({
                 <ChannelRow
                   key={c.id}
                   channel={c}
+                  agents={group.members.filter((m) => m.isAgent).map((m) => ({ handle: m.handle, name: m.remark || m.name }))}
                   canMoveUp={i > 0}
                   canMoveDown={i < channels.length - 1}
                   onChanged={onChanged}

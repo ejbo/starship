@@ -16,6 +16,13 @@ export interface GroupChannel {
   topic: string;
   /** 慢速模式秒数（0=关） */
   slowmodeSec: number;
+  /** 在此频道可自动响应的 agent handle 列表（空=全部群内 agent） */
+  agentScope: string[];
+}
+
+/** 把存储的 agentScope JSON 解析成 string[] */
+function parseScope(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
 }
 
 export interface GroupMember extends Friend {
@@ -113,7 +120,7 @@ export async function getMyGroups(): Promise<GroupSummary[]> {
     prisma.chatGroup.findMany({
       where: { id: { in: groupIds } },
       include: {
-        channels: { orderBy: { sort: "asc" }, select: { id: true, name: true, kind: true, sort: true, topic: true, slowmodeSec: true } },
+        channels: { orderBy: { sort: "asc" }, select: { id: true, name: true, kind: true, sort: true, topic: true, slowmodeSec: true, agentScope: true } },
         members: { orderBy: { joinedAt: "asc" }, select: { user: { select: friendUserSelect } } },
       },
       orderBy: { createdAt: "desc" },
@@ -142,7 +149,7 @@ export async function getMyGroups(): Promise<GroupSummary[]> {
       description: g.description ?? "",
       iconUrl: g.iconUrl ?? null,
       ownerHandle: owner?.handle ?? "",
-      channels: g.channels.map((c) => ({ id: c.id, name: c.name, kind: c.kind as "text" | "voice", sort: c.sort, topic: c.topic ?? "", slowmodeSec: c.slowmodeSec ?? 0 })),
+      channels: g.channels.map((c) => ({ id: c.id, name: c.name, kind: c.kind as "text" | "voice", sort: c.sort, topic: c.topic ?? "", slowmodeSec: c.slowmodeSec ?? 0, agentScope: parseScope(c.agentScope) })),
       members,
     };
   });
@@ -226,13 +233,13 @@ export async function createChannel(groupId: string, name: string, kind: "text" 
   const max = await prisma.chatChannel.aggregate({ where: { groupId }, _max: { sort: true } });
   const c = await prisma.chatChannel.create({
     data: { groupId, name: clean, kind, sort: (max._max.sort ?? 0) + 1 },
-    select: { id: true, name: true, kind: true, sort: true, topic: true, slowmodeSec: true },
+    select: { id: true, name: true, kind: true, sort: true, topic: true, slowmodeSec: true, agentScope: true },
   });
-  return { id: c.id, name: c.name, kind: c.kind as "text" | "voice", sort: c.sort, topic: c.topic, slowmodeSec: c.slowmodeSec };
+  return { id: c.id, name: c.name, kind: c.kind as "text" | "voice", sort: c.sort, topic: c.topic, slowmodeSec: c.slowmodeSec, agentScope: parseScope(c.agentScope) };
 }
 
-/** 改频道名 / 主题 / 慢速模式（任意成员可改，Steam/Discord 轻量化） */
-export async function updateChannel(channelId: string, patch: { name?: string; topic?: string; slowmodeSec?: number }): Promise<void> {
+/** 改频道名 / 主题 / 慢速模式 / agent 响应范围（任意成员可改，Steam/Discord 轻量化） */
+export async function updateChannel(channelId: string, patch: { name?: string; topic?: string; slowmodeSec?: number; agentScope?: string[] }): Promise<void> {
   const userId = await getSessionUserId();
   await channelGroupOrThrow(channelId, userId);
   const data: Record<string, unknown> = {};
@@ -242,6 +249,7 @@ export async function updateChannel(channelId: string, patch: { name?: string; t
   }
   if (patch.topic !== undefined) data.topic = patch.topic.trim().slice(0, 200);
   if (patch.slowmodeSec !== undefined) data.slowmodeSec = Math.max(0, Math.min(21600, Math.round(patch.slowmodeSec)));
+  if (patch.agentScope !== undefined) data.agentScope = patch.agentScope.filter((x) => typeof x === "string").slice(0, 50);
   if (Object.keys(data).length > 0) await prisma.chatChannel.update({ where: { id: channelId }, data });
 }
 

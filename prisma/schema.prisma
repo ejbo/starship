@@ -172,6 +172,8 @@ model ChatChannel {
   topic    String         @default("")
   /// 慢速模式：同一成员两条消息最小间隔秒数（0=关）
   slowmodeSec Int         @default(0)
+  /// 在此频道允许自动响应的 agent handle 列表（JSON 数组；null/空=全部群内 agent 按常规 @ 规则响应）
+  agentScope Json?
   group    ChatGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
   messages GroupMessage[]
 }

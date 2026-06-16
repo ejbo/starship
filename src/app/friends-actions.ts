@@ -150,7 +150,7 @@ export async function createChannelAction(groupId: string, name: string, kind: "
   }
 }
 
-export async function updateChannelAction(channelId: string, patch: { name?: string; topic?: string; slowmodeSec?: number }): Promise<{ ok: boolean; error?: string }> {
+export async function updateChannelAction(channelId: string, patch: { name?: string; topic?: string; slowmodeSec?: number; agentScope?: string[] }): Promise<{ ok: boolean; error?: string }> {
   try {
     await updateChannel(channelId, patch);
     return { ok: true };

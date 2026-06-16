@@ -397,10 +397,14 @@ export async function fanoutGroup(
     select: { user: { select: { id: true, handle: true, name: true, agentKind: true, agentSettings: true } } },
   });
   if (members.length === 0) return;
+  // 频道级 agent 响应范围：非空时，只有在范围内的 agent 才允许在该频道自动响应
+  const scopeRow = await prisma.chatChannel.findUnique({ where: { id: input.channelId }, select: { agentScope: true } });
+  const scope = Array.isArray(scopeRow?.agentScope) ? (scopeRow.agentScope as unknown[]).filter((x): x is string => typeof x === "string") : [];
   // 唤醒：被 @ 命中；或开了「主动响应」且本条来自人类（不对 agent 消息主动回，防互刷）。
-  // 关掉「允许被 agent @」的成员，agent 发的消息不唤醒它。
+  // 关掉「允许被 agent @」的成员，agent 发的消息不唤醒它；频道范围外的 agent 也不唤醒。
   const candidates = members.filter((m) => {
     if (m.user.id === input.fromId) return false;
+    if (scope.length > 0 && !scope.includes(m.user.handle)) return false;
     const s = getAgentSettings(m.user.agentSettings);
     if (input.fromKind === "agent" && !s.allowAgentMention) return false;
     const mentioned = bodyMentions(input.body, m.user.handle, m.user.name);
