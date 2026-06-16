@@ -12,6 +12,10 @@ export interface GroupChannel {
   id: string;
   name: string;
   kind: "text" | "voice";
+  sort: number;
+  topic: string;
+  /** 慢速模式秒数（0=关） */
+  slowmodeSec: number;
 }
 
 export interface GroupMember extends Friend {
@@ -26,6 +30,10 @@ export interface GroupSummary {
   name: string;
   /** 自定义名原值（"" = 自动命名），改名表单用 */
   rawName: string;
+  /** 群简介 */
+  description: string;
+  /** 群图标（dataURL/直链；空则成员头像拼贴） */
+  iconUrl: string | null;
   ownerHandle: string;
   channels: GroupChannel[];
   members: GroupMember[];
@@ -76,6 +84,21 @@ async function membershipOrThrow(groupId: string, userId: string) {
   if (!m) throw new Error("不在该群组中");
 }
 
+/** 群主校验（图标/简介/移除成员/删群/删频道等管理操作）。返回群信息。 */
+async function ownerOrThrow(groupId: string, userId: string) {
+  const g = await prisma.chatGroup.findUnique({ where: { id: groupId }, select: { ownerId: true } });
+  if (!g) throw new Error("群组不存在");
+  if (g.ownerId !== userId) throw new Error("只有群主可以操作");
+  return g;
+}
+
+async function channelGroupOrThrow(channelId: string, userId: string): Promise<string> {
+  const c = await prisma.chatChannel.findUnique({ where: { id: channelId }, select: { groupId: true } });
+  if (!c) throw new Error("频道不存在");
+  await membershipOrThrow(c.groupId, userId);
+  return c.groupId;
+}
+
 /** 我加入的全部群组（含频道与成员实时状态），按创建时间新→旧 */
 export async function getMyGroups(): Promise<GroupSummary[]> {
   const userId = await getSessionUserId();
@@ -90,7 +113,7 @@ export async function getMyGroups(): Promise<GroupSummary[]> {
     prisma.chatGroup.findMany({
       where: { id: { in: groupIds } },
       include: {
-        channels: { orderBy: { sort: "asc" }, select: { id: true, name: true, kind: true } },
+        channels: { orderBy: { sort: "asc" }, select: { id: true, name: true, kind: true, sort: true, topic: true, slowmodeSec: true } },
         members: { orderBy: { joinedAt: "asc" }, select: { user: { select: friendUserSelect } } },
       },
       orderBy: { createdAt: "desc" },
@@ -116,8 +139,10 @@ export async function getMyGroups(): Promise<GroupSummary[]> {
       id: g.id,
       name: g.name || autoGroupName(others),
       rawName: g.name,
+      description: g.description ?? "",
+      iconUrl: g.iconUrl ?? null,
       ownerHandle: owner?.handle ?? "",
-      channels: g.channels.map((c) => ({ id: c.id, name: c.name, kind: c.kind as "text" | "voice" })),
+      channels: g.channels.map((c) => ({ id: c.id, name: c.name, kind: c.kind as "text" | "voice", sort: c.sort, topic: c.topic ?? "", slowmodeSec: c.slowmodeSec ?? 0 })),
       members,
     };
   });
@@ -201,9 +226,74 @@ export async function createChannel(groupId: string, name: string, kind: "text" 
   const max = await prisma.chatChannel.aggregate({ where: { groupId }, _max: { sort: true } });
   const c = await prisma.chatChannel.create({
     data: { groupId, name: clean, kind, sort: (max._max.sort ?? 0) + 1 },
-    select: { id: true, name: true, kind: true },
+    select: { id: true, name: true, kind: true, sort: true, topic: true, slowmodeSec: true },
   });
-  return { id: c.id, name: c.name, kind: c.kind as "text" | "voice" };
+  return { id: c.id, name: c.name, kind: c.kind as "text" | "voice", sort: c.sort, topic: c.topic, slowmodeSec: c.slowmodeSec };
+}
+
+/** 改频道名 / 主题 / 慢速模式（任意成员可改，Steam/Discord 轻量化） */
+export async function updateChannel(channelId: string, patch: { name?: string; topic?: string; slowmodeSec?: number }): Promise<void> {
+  const userId = await getSessionUserId();
+  await channelGroupOrThrow(channelId, userId);
+  const data: Record<string, unknown> = {};
+  if (patch.name !== undefined) {
+    const n = patch.name.trim().slice(0, 20);
+    if (n) data.name = n;
+  }
+  if (patch.topic !== undefined) data.topic = patch.topic.trim().slice(0, 200);
+  if (patch.slowmodeSec !== undefined) data.slowmodeSec = Math.max(0, Math.min(21600, Math.round(patch.slowmodeSec)));
+  if (Object.keys(data).length > 0) await prisma.chatChannel.update({ where: { id: channelId }, data });
+}
+
+/** 删频道：群至少保留一个文字频道 */
+export async function deleteChannel(channelId: string): Promise<void> {
+  const userId = await getSessionUserId();
+  const groupId = await channelGroupOrThrow(channelId, userId);
+  const ch = await prisma.chatChannel.findUnique({ where: { id: channelId }, select: { kind: true } });
+  if (ch?.kind === "text") {
+    const textCount = await prisma.chatChannel.count({ where: { groupId, kind: "text" } });
+    if (textCount <= 1) throw new Error("至少保留一个文字频道");
+  }
+  await prisma.chatChannel.delete({ where: { id: channelId } });
+}
+
+/** 重排频道（拖动/上下移）：按给定顺序写 sort */
+export async function reorderChannels(groupId: string, orderedIds: string[]): Promise<void> {
+  const userId = await getSessionUserId();
+  await membershipOrThrow(groupId, userId);
+  const owned = await prisma.chatChannel.findMany({ where: { groupId }, select: { id: true } });
+  const valid = new Set(owned.map((c) => c.id));
+  await prisma.$transaction(
+    orderedIds.filter((id) => valid.has(id)).map((id, i) => prisma.chatChannel.update({ where: { id }, data: { sort: i } })),
+  );
+}
+
+/** 改群资料：名字 / 简介 / 图标（群主） */
+export async function updateGroupProfile(groupId: string, patch: { name?: string; description?: string; iconUrl?: string | null }): Promise<void> {
+  const userId = await getSessionUserId();
+  await ownerOrThrow(groupId, userId);
+  const data: Record<string, unknown> = {};
+  if (patch.name !== undefined) data.name = patch.name.trim().slice(0, 32);
+  if (patch.description !== undefined) data.description = patch.description.trim().slice(0, 500);
+  if (patch.iconUrl !== undefined) data.iconUrl = patch.iconUrl?.trim() || null;
+  if (Object.keys(data).length > 0) await prisma.chatGroup.update({ where: { id: groupId }, data });
+}
+
+/** 移除成员（群主；不能移除自己——用退群） */
+export async function removeMember(groupId: string, handle: string): Promise<void> {
+  const userId = await getSessionUserId();
+  await ownerOrThrow(groupId, userId);
+  const target = await prisma.user.findUnique({ where: { handle }, select: { id: true } });
+  if (!target) throw new Error("用户不存在");
+  if (target.id === userId) throw new Error("不能移除自己（请用退出群组）");
+  await prisma.chatGroupMember.deleteMany({ where: { groupId, userId: target.id } });
+}
+
+/** 解散群（群主） */
+export async function deleteGroup(groupId: string): Promise<void> {
+  const userId = await getSessionUserId();
+  await ownerOrThrow(groupId, userId);
+  await prisma.chatGroup.delete({ where: { id: groupId } }); // 成员/频道/消息级联清除
 }
 
 interface GroupRow {
@@ -273,10 +363,20 @@ export async function getChannelPage(channelId: string, beforeIso?: string): Pro
 
 export async function sendGroupMessage(channelId: string, body: string, input: SendInput = {}): Promise<GroupChatMessage> {
   const userId = await getSessionUserId();
-  const channel = await prisma.chatChannel.findUnique({ where: { id: channelId }, select: { groupId: true, kind: true } });
+  const channel = await prisma.chatChannel.findUnique({ where: { id: channelId }, select: { groupId: true, kind: true, slowmodeSec: true } });
   if (!channel) throw new Error("频道不存在");
   if (channel.kind !== "text") throw new Error("语音频道不能发文字消息");
   await membershipOrThrow(channel.groupId, userId);
+
+  // 慢速模式：群主豁免；其余成员两条消息须间隔 slowmodeSec 秒
+  if (channel.slowmodeSec > 0) {
+    const g = await prisma.chatGroup.findUnique({ where: { id: channel.groupId }, select: { ownerId: true } });
+    if (g?.ownerId !== userId) {
+      const since = new Date(Date.now() - channel.slowmodeSec * 1000).toISOString();
+      const recent = await prisma.groupMessage.count({ where: { channelId, fromId: userId, at: { gt: since } } });
+      if (recent > 0) throw new Error(`慢速模式：${channel.slowmodeSec} 秒内只能发一条`);
+    }
+  }
 
   const kind = input.kind ?? "text";
   const clean = body.trim().slice(0, 8000);

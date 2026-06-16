@@ -16,11 +16,9 @@ import {
   FileText,
   Hash,
   Headphones,
-  LogOut,
   Mic,
   MicOff,
   Paperclip,
-  Pencil,
   Phone,
   PhoneOff,
   Play,
@@ -38,9 +36,10 @@ import {
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Markdown } from "@/components/ui/markdown";
-import { createChannelAction, leaveGroupAction, renameGroupAction } from "@/app/friends-actions";
+import { createChannelAction } from "@/app/friends-actions";
 import { getAgentDetailAction, updateAgentSettingsAction } from "@/app/agents-actions";
 import { HOSTED_PROVIDERS, MODEL_SUGGESTIONS, PROVIDER_LABELS } from "@/lib/agent-shared";
+import { GroupSettingsModal } from "./group-settings-modal";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 import type { GroupMember, GroupSummary } from "@/lib/group-service";
@@ -272,13 +271,6 @@ export function ChatWindow(props: ChatWindowProps) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [lightbox]);
-
-  useEffect(() => {
-    if (!settingsOpen) return;
-    const close = () => setSettingsOpen(false);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [settingsOpen]);
 
   if (openChats.length === 0 || !pos) return null;
 
@@ -854,19 +846,15 @@ export function ChatWindow(props: ChatWindowProps) {
               onToggleMute={() => props.onToggleMute(activeGroup.id)}
               onInvite={() => props.onInvite(activeGroup.id, [])}
               onToggleMembers={() => setMembersOpen((o) => !o)}
-              onRename={async () => {
-                const next = window.prompt("群组名称（留空恢复自动命名）", activeGroup.rawName);
-                if (next === null) return;
-                await renameGroupAction(activeGroup.id, next);
-                await props.onGroupsChanged();
-              }}
-              onLeave={async () => {
-                if (!window.confirm(`确定退出「${activeGroup.name}」？`)) return;
-                await leaveGroupAction(activeGroup.id);
-                props.onCloseTab(groupKey(activeGroup.id));
-                await props.onGroupsChanged();
-              }}
             />
+            {settingsOpen && (
+              <GroupSettingsModal
+                group={activeGroup}
+                meHandle={me.handle}
+                onClose={() => setSettingsOpen(false)}
+                onChanged={props.onGroupsChanged}
+              />
+            )}
             <div className="flex min-h-0 grow items-stretch">
               {showChannels && (
                 <ChannelSidebar
@@ -883,6 +871,15 @@ export function ChatWindow(props: ChatWindowProps) {
                 />
               )}
               <div className="relative flex min-w-0 grow flex-col border-l border-line">
+                {(() => {
+                  const ch = activeGroup.channels.find((c) => c.id === activeChannelId);
+                  return ch?.topic ? (
+                    <div className="flex items-center gap-1.5 border-b border-line bg-card-hi/30 px-3 py-1 text-[11px] text-mute">
+                      <Hash className="size-3 shrink-0" />
+                      <span className="truncate">{ch.topic}</span>
+                    </div>
+                  ) : null;
+                })()}
                 {messageArea}
                 {scrollDownBtn}
                 {inputBar}
@@ -967,8 +964,6 @@ function GroupHeader({
   onToggleMute,
   onInvite,
   onToggleMembers,
-  onRename,
-  onLeave,
 }: {
   group: GroupSummary;
   muted: boolean;
@@ -977,8 +972,6 @@ function GroupHeader({
   onToggleMute: () => void;
   onInvite: () => void;
   onToggleMembers: () => void;
-  onRename: () => void;
-  onLeave: () => void;
 }) {
   const usingCount = group.members.filter((m) => m.presence.kind === "using" || m.presence.kind === "meeting").length;
   const onlineCount = group.members.filter((m) => m.presence.kind === "online").length;
@@ -1008,29 +1001,14 @@ function GroupHeader({
         <button onClick={onInvite} className="rounded-lg p-1.5 text-dim transition-colors hover:bg-card-hi hover:text-ink" title="邀请好友加入" aria-label="邀请好友加入">
           <UserPlus className="size-4" />
         </button>
-        <div className="relative">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleSettings();
-            }}
-            className="rounded-lg p-1.5 text-dim transition-colors hover:bg-card-hi hover:text-ink"
-            title="群组设置"
-            aria-label="群组设置"
-          >
-            <Settings className="size-4" />
-          </button>
-          {settingsOpen && (
-            <div className="absolute right-0 top-full z-20 mt-1 w-36 overflow-hidden rounded-xl border border-line bg-panel py-1 shadow-[0_12px_40px_-12px_rgb(28_36_51/.35)]" onClick={(e) => e.stopPropagation()}>
-              <button onClick={onRename} className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm text-ink transition-colors hover:bg-card-hi">
-                <Pencil className="size-3.5" /> 重命名群组
-              </button>
-              <button onClick={onLeave} className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm text-danger transition-colors hover:bg-card-hi">
-                <LogOut className="size-3.5" /> 退出群组
-              </button>
-            </div>
-          )}
-        </div>
+        <button
+          onClick={onToggleSettings}
+          className={cn("rounded-lg p-1.5 transition-colors hover:bg-card-hi hover:text-ink", settingsOpen ? "text-accent" : "text-dim")}
+          title="群组设置"
+          aria-label="群组设置"
+        >
+          <Settings className="size-4" />
+        </button>
       </div>
     </div>
   );

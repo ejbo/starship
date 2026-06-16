@@ -20,14 +20,20 @@ import {
 import {
   createChannel,
   createGroup,
+  deleteChannel,
+  deleteGroup,
   getChannelPage,
   getGroupIncomingSince,
   getGroupMutationsSince,
   getMyGroups,
   inviteToGroup,
   leaveGroup,
+  removeMember,
   renameGroup,
+  reorderChannels,
   sendGroupMessage,
+  updateChannel,
+  updateGroupProfile,
   type GroupChannel,
   type GroupChannelPage,
   type GroupChatMessage,
@@ -141,6 +147,55 @@ export async function createChannelAction(groupId: string, name: string, kind: "
     return { ok: true, channel };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "创建失败" };
+  }
+}
+
+export async function updateChannelAction(channelId: string, patch: { name?: string; topic?: string; slowmodeSec?: number }): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await updateChannel(channelId, patch);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "保存失败" };
+  }
+}
+
+export async function deleteChannelAction(channelId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await deleteChannel(channelId);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "删除失败" };
+  }
+}
+
+export async function reorderChannelsAction(groupId: string, orderedIds: string[]): Promise<void> {
+  await reorderChannels(groupId, orderedIds);
+}
+
+export async function updateGroupProfileAction(groupId: string, patch: { name?: string; description?: string; iconUrl?: string | null }): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await updateGroupProfile(groupId, patch);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "保存失败" };
+  }
+}
+
+export async function removeMemberAction(groupId: string, handle: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await removeMember(groupId, handle);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "移除失败" };
+  }
+}
+
+export async function deleteGroupAction(groupId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await deleteGroup(groupId);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "解散失败" };
   }
 }
 

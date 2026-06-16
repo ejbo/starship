@@ -138,6 +138,10 @@ model ChatGroup {
   id        String            @id @default(cuid())
   /// 群名；空字符串 = 按成员名自动命名（"A、B 和 C"）
   name      String            @default("")
+  /// 群简介（设置面板可编辑）
+  description String          @default("")
+  /// 群图标（上传图片 dataURL / 直链；空则用成员头像拼贴）
+  iconUrl   String?
   ownerId   String
   createdAt String
   members   ChatGroupMember[]
@@ -164,6 +168,10 @@ model ChatChannel {
   name     String
   kind     String         @default("text")
   sort     Int            @default(0)
+  /// 频道简介 / 主题（频道头部展示）
+  topic    String         @default("")
+  /// 慢速模式：同一成员两条消息最小间隔秒数（0=关）
+  slowmodeSec Int         @default(0)
   group    ChatGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
   messages GroupMessage[]
 }
