@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bot, Check, ChevronDown, Copy, ImagePlus, MessageSquare, Sparkles, Terminal, X } from "lucide-react";
+import { Bot, Check, ChevronDown, Copy, FolderOpen, ImagePlus, MessageSquare, Pencil, Sparkles, Terminal, X } from "lucide-react";
 import {
   createAgentAction,
   getAgentDetailAction,
   getAgentFilesAction,
   saveAgentFileAction,
+  updateAgentPersonaAction,
   updateAgentSettingsAction,
   type ConnectorCommand,
 } from "@/app/agents-actions";
@@ -322,6 +323,15 @@ function AgentFiles({ handle, syncOn, agentKind }: { handle: string; syncOn: boo
   );
 }
 
+/** 文件 / 记忆 独立弹窗（从 Agent 设置里点开，不再挤在主弹窗内） */
+function AgentFilesModal({ handle, name, syncOn, agentKind, onClose }: { handle: string; name: string; syncOn: boolean; agentKind: string; onClose: () => void }) {
+  return (
+    <Shell title={`「${name}」的文件 / 记忆`} onClose={onClose}>
+      <AgentFiles handle={handle} syncOn={syncOn} agentKind={agentKind} />
+    </Shell>
+  );
+}
+
 /** 折叠的高级设置（上下文/唤醒/限速/本地权限） */
 function AdvancedSettings({ settings, isLocal, onChange }: { settings: AgentSettings; isLocal: boolean; onChange: (patch: Partial<AgentSettings>) => void }) {
   const [open, setOpen] = useState(false);
@@ -390,7 +400,7 @@ function Shell({ title, onClose, children }: { title: string; onClose: () => voi
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/30 p-4" onClick={onClose}>
       <div
-        className="flex max-h-[85vh] w-[26rem] flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-[0_16px_48px_-12px_rgb(28_36_51/.35)]"
+        className="flex max-h-[85vh] w-[30rem] flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-[0_16px_48px_-12px_rgb(28_36_51/.35)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
@@ -666,6 +676,8 @@ export function AgentSettingsModal({ handle, onClose, onSaved }: { handle: strin
   const [settings, setSettings] = useState<AgentSettings>({ ...DEFAULT_AGENT_SETTINGS });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [personaOpen, setPersonaOpen] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
   const isHosted = agentKind === "hosted";
   const patchSettings = (p: Partial<AgentSettings>) => setSettings((s) => ({ ...s, ...p }));
 
@@ -710,68 +722,86 @@ export function AgentSettingsModal({ handle, onClose, onSaved }: { handle: strin
     onClose();
   };
 
+  const personaPreview = persona.trim().split("\n")[0]?.slice(0, 40) || "未设置";
+
   return (
-    <Shell title="Agent 设置" onClose={onClose}>
-      {loading ? (
-        <p className="py-6 text-center text-sm text-mute">加载中…</p>
-      ) : (
-        <div className="space-y-3.5">
-          <label className="block space-y-1">
-            <span className="text-xs text-dim">名字</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={24}
-              className="w-full rounded-lg border border-line bg-page px-3 py-2 text-sm focus:border-accent focus:outline-none"
-            />
-          </label>
-
-          <div className="space-y-1.5">
-            <span className="text-xs text-dim">头像</span>
-            <AvatarUpload name={name} hue={avatarHue} url={avatarUrl} onUpload={setAvatarUrl} onClear={() => setAvatarUrl(null)} />
-          </div>
-
-          <ProviderModel
-            isHosted={isHosted}
-            agentKind={agentKind}
-            provider={settings.provider}
-            model={settings.model ?? ""}
-            onProvider={(p) => patchSettings({ provider: p })}
-            onModel={(m) => patchSettings({ model: m })}
-          />
-
-          <label className="block space-y-1">
-            <span className="text-xs text-dim">人设 / 角色</span>
-            <textarea
-              value={persona}
-              onChange={(e) => setPersona(e.target.value)}
-              rows={4}
-              maxLength={2000}
-              placeholder="TA 是谁？负责什么？什么说话风格？"
-              className="w-full resize-y rounded-lg border border-line bg-page px-3 py-2 text-sm leading-relaxed focus:border-accent focus:outline-none"
-            />
-            {!isHosted && <span className="text-[11px] text-mute">本地 Agent 的人设也写在其工作目录的上下文文件里，本机编辑同样生效。</span>}
-          </label>
-
-          <AdvancedSettings settings={settings} isLocal={!isHosted} onChange={patchSettings} />
-
-          {!isHosted && (
-            <div className="space-y-1.5">
-              <span className="text-xs text-dim">文件 / 记忆</span>
-              <AgentFiles handle={handle} syncOn={settings.syncFiles} agentKind={agentKind} />
+    <>
+      <Shell title="Agent 设置" onClose={onClose}>
+        {loading ? (
+          <p className="py-6 text-center text-sm text-mute">加载中…</p>
+        ) : (
+          <div className="space-y-3.5">
+            <div className="flex items-center gap-3">
+              <AvatarUpload name={name} hue={avatarHue} url={avatarUrl} onUpload={setAvatarUrl} onClear={() => setAvatarUrl(null)} />
+              <label className="block min-w-0 grow space-y-1">
+                <span className="text-xs text-dim">名字</span>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  maxLength={24}
+                  className="w-full rounded-lg border border-line bg-page px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                />
+              </label>
             </div>
-          )}
 
-          {error && <p className="text-xs text-danger">{error}</p>}
-          <button
-            onClick={save}
-            disabled={!name.trim() || busy}
-            className="w-full rounded-lg bg-accent py-2 text-sm font-medium text-white transition-colors hover:bg-accent-deep disabled:opacity-50"
-          >
-            {busy ? "保存中…" : "保存"}
-          </button>
-        </div>
+            <ProviderModel
+              isHosted={isHosted}
+              agentKind={agentKind}
+              provider={settings.provider}
+              model={settings.model ?? ""}
+              onProvider={(p) => patchSettings({ provider: p })}
+              onModel={(m) => patchSettings({ model: m })}
+            />
+
+            {/* 人设：一句话预览 + 点击打开完整编辑 */}
+            <div className="space-y-1">
+              <span className="text-xs text-dim">人设 / 角色</span>
+              <button
+                onClick={() => setPersonaOpen(true)}
+                className="flex w-full items-center gap-2 rounded-lg border border-line bg-page px-3 py-2 text-left transition-colors hover:border-accent/50"
+              >
+                <span className={cn("min-w-0 grow truncate text-sm", persona.trim() ? "text-ink" : "text-mute")}>{personaPreview}</span>
+                <Pencil className="size-3.5 shrink-0 text-mute" />
+              </button>
+            </div>
+
+            <AdvancedSettings settings={settings} isLocal={!isHosted} onChange={patchSettings} />
+
+            {!isHosted && (
+              <button
+                onClick={() => setFilesOpen(true)}
+                className="flex w-full items-center gap-2 rounded-lg border border-line bg-page px-3 py-2.5 text-left text-sm transition-colors hover:border-accent/50"
+              >
+                <FolderOpen className="size-4 shrink-0 text-mute" />
+                <span className="grow">文件 / 记忆</span>
+                <span className="text-[11px] text-mute">{settings.syncFiles ? "查看 / 编辑" : "本地路径"}</span>
+              </button>
+            )}
+
+            {error && <p className="text-xs text-danger">{error}</p>}
+            <button
+              onClick={save}
+              disabled={!name.trim() || busy}
+              className="w-full rounded-lg bg-accent py-2 text-sm font-medium text-white transition-colors hover:bg-accent-deep disabled:opacity-50"
+            >
+              {busy ? "保存中…" : "保存"}
+            </button>
+          </div>
+        )}
+      </Shell>
+
+      {personaOpen && (
+        <PersonaModal
+          name={name}
+          initial={persona}
+          onSave={async (p) => {
+            await updateAgentPersonaAction(handle, p);
+            setPersona(p);
+          }}
+          onClose={() => setPersonaOpen(false)}
+        />
       )}
-    </Shell>
+      {filesOpen && <AgentFilesModal handle={handle} name={name} syncOn={settings.syncFiles} agentKind={agentKind} onClose={() => setFilesOpen(false)} />}
+    </>
   );
 }
