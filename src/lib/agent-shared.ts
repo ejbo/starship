@@ -54,6 +54,21 @@ export interface AgentSettings {
 export const REPLY_LENGTHS = ["auto", "short", "normal", "detailed"] as const;
 export const REPLY_LENGTH_LABELS: Record<string, string> = { auto: "不限定", short: "简短", normal: "适中", detailed: "详细" };
 
+/** 各 provider / 本地后端的常用模型建议（datalist；用户也可手输任意 model） */
+export const MODEL_SUGGESTIONS: Record<string, string[]> = {
+  anthropic: ["claude-sonnet-4-5", "claude-opus-4-1", "claude-haiku-4-5"],
+  openai: ["gpt-5.4", "gpt-5-mini", "o4-mini"],
+  google: ["gemini-2.5-pro", "gemini-2.5-flash"],
+  xai: ["grok-4", "grok-3-mini"],
+  deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  zhipu: ["glm-4.6", "glm-4-flash", "glm-4-plus"],
+  qwen: ["qwen-plus", "qwen-max", "qwen-turbo"],
+  "local-claude": ["claude-sonnet-4-5", "claude-opus-4-1", "claude-haiku-4-5"],
+  "local-codex": ["gpt-5.4", "gpt-5.4-mini"],
+  "local-gemini": ["gemini-2.5-pro", "gemini-2.5-flash"],
+  "local-qwen": ["qwen3-coder-plus", "qwen-plus"],
+};
+
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   provider: "anthropic",
   model: null,

@@ -84,9 +84,9 @@ export function MiniProfileCard({ friend }: { friend: Friend }) {
             <p className="truncate text-[11px] text-mute">@{friend.handle}</p>
           </div>
           {friend.isAgent ? (
-            <span className="ml-auto flex items-center gap-1.5 rounded-md border border-line bg-card-hi px-2 py-1 text-[11px] text-dim">
-              <Bot className="size-3.5 text-green" />
-              {friend.agentKind === "hosted" ? "托管 Agent" : "本地 Agent"}
+            <span className="ml-auto flex max-w-[55%] items-center gap-1.5 rounded-md border border-line bg-card-hi px-2 py-1 text-[11px] text-dim" title={`${friend.agentKind === "hosted" ? "托管" : "本地"} Agent · ${friend.agentModel ?? ""}`}>
+              <Bot className="size-3.5 shrink-0 text-green" />
+              <span className="truncate font-mono">{friend.agentModel ?? (friend.agentKind === "hosted" ? "托管 Agent" : "本地 Agent")}</span>
             </span>
           ) : (
             friend.badge &&

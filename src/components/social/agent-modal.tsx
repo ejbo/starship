@@ -9,25 +9,10 @@ import {
   type ConnectorCommand,
 } from "@/app/agents-actions";
 import { Avatar } from "@/components/ui/avatar";
-import { DEFAULT_AGENT_SETTINGS, HOSTED_PROVIDERS, PROVIDER_LABELS, REPLY_LENGTHS, REPLY_LENGTH_LABELS, type AgentSettings } from "@/lib/agent-shared";
+import { DEFAULT_AGENT_SETTINGS, HOSTED_PROVIDERS, MODEL_SUGGESTIONS, PROVIDER_LABELS, REPLY_LENGTHS, REPLY_LENGTH_LABELS, type AgentSettings } from "@/lib/agent-shared";
 import { copyText } from "@/lib/clipboard";
 import { imageToDataUrl } from "@/components/social/presence";
 import { cn } from "@/lib/cn";
-
-/** 各 provider / 本地后端的常用模型建议（datalist；用户也可手输任意 model） */
-const MODEL_SUGGESTIONS: Record<string, string[]> = {
-  anthropic: ["claude-sonnet-4-5", "claude-opus-4-1", "claude-haiku-4-5"],
-  openai: ["gpt-5.4", "gpt-5-mini", "o4-mini"],
-  google: ["gemini-2.5-pro", "gemini-2.5-flash"],
-  xai: ["grok-4", "grok-3-mini"],
-  deepseek: ["deepseek-chat", "deepseek-reasoner"],
-  zhipu: ["glm-4.6", "glm-4-flash", "glm-4-plus"],
-  qwen: ["qwen-plus", "qwen-max", "qwen-turbo"],
-  "local-claude": ["claude-sonnet-4-5", "claude-opus-4-1", "claude-haiku-4-5"],
-  "local-codex": ["gpt-5.4", "gpt-5.4-mini"],
-  "local-gemini": ["gemini-2.5-pro", "gemini-2.5-flash"],
-  "local-qwen": ["qwen3-coder-plus", "qwen-plus"],
-};
 
 const KINDS = [
   {

@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { getSessionUserId, getSessionUserIdOrNull } from "@/lib/session";
 import { looksLikeFriendCode, normalizeFriendCode } from "@/lib/tokens";
+import { defaultModel } from "@/lib/provider-adapters";
 import type { AppIconArt, Friend, PresenceKind } from "@/lib/types";
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
@@ -92,6 +93,7 @@ export const friendUserSelect = {
   agentKind: true,
   agentLastPollAt: true,
   agentPersona: true,
+  agentSettings: true,
 } as const;
 
 type FriendUserRow = {
@@ -113,7 +115,19 @@ type FriendUserRow = {
   agentKind: string | null;
   agentLastPollAt: string | null;
   agentPersona: string | null;
+  agentSettings: unknown;
 };
+
+/** agent 解析后的「当前模型」展示串 + provider（hosted）。轻量解析 agentSettings，不引 agent-service */
+function resolveAgentModel(agentKind: string | null, raw: unknown): { model: string; provider: string | null } {
+  const s = raw && typeof raw === "object" ? (raw as { model?: unknown; provider?: unknown }) : {};
+  const provider = typeof s.provider === "string" ? s.provider : "anthropic";
+  const explicit = typeof s.model === "string" ? s.model.trim() : "";
+  if (agentKind === "hosted") {
+    return { model: explicit || defaultModel[provider] || "默认", provider };
+  }
+  return { model: explicit || "CLI 默认", provider: null };
+}
 
 const AGENT_POLL_ONLINE_MS = 90_000;
 
@@ -132,6 +146,7 @@ export function toFriend(u: FriendUserRow, remark: string | null): Friend {
       else if (presence.kind !== "using") presence = { kind: "online" };
     }
   }
+  const am = u.kind === "agent" ? resolveAgentModel(u.agentKind, u.agentSettings) : null;
   return {
     handle: u.handle,
     name: u.name,
@@ -144,6 +159,8 @@ export function toFriend(u: FriendUserRow, remark: string | null): Friend {
     badge: badges[0] ?? null,
     isAgent: u.kind === "agent",
     agentKind: u.agentKind,
+    agentModel: am?.model ?? undefined,
+    agentProvider: am?.provider ?? undefined,
     persona: u.kind === "agent" ? u.agentPersona : undefined,
     presence,
   };

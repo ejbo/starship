@@ -7,9 +7,11 @@ import {
   BellOff,
   Bot,
   Check,
+  ChevronDown,
   ChevronsRight,
   Copy,
   CornerUpLeft,
+  Cpu,
   Download,
   FileText,
   Hash,
@@ -37,6 +39,8 @@ import {
 import { Avatar } from "@/components/ui/avatar";
 import { Markdown } from "@/components/ui/markdown";
 import { createChannelAction, leaveGroupAction, renameGroupAction } from "@/app/friends-actions";
+import { getAgentDetailAction, updateAgentSettingsAction } from "@/app/agents-actions";
+import { HOSTED_PROVIDERS, MODEL_SUGGESTIONS, PROVIDER_LABELS } from "@/lib/agent-shared";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 import type { GroupMember, GroupSummary } from "@/lib/group-service";
@@ -819,6 +823,7 @@ export function ChatWindow(props: ChatWindowProps) {
                 ) : (
                   <span className={cn(presenceMeta[activeFriend.presence.kind].tone)}>{statusText(activeFriend)}</span>
                 )}
+                <AgentModelSwitcher friend={activeFriend} />
               </div>
             )}
             <div className="relative flex min-h-0 grow flex-col">
@@ -1261,6 +1266,99 @@ function TypingBubble({ typers, isGroup }: { typers: { handle: string; name: str
         <span className="size-1.5 animate-bounce rounded-full bg-mute" />
       </span>
       {label}
+    </div>
+  );
+}
+
+// —— Agent 当前模型 chip + 随时切换面板 ——
+function AgentModelSwitcher({ friend }: { friend: Friend }) {
+  const isHosted = friend.agentKind === "hosted";
+  const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [provider, setProvider] = useState(friend.agentProvider ?? "anthropic");
+  const [model, setModel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const toggle = async () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setOpen(true);
+    if (!loaded) {
+      const r = await getAgentDetailAction(friend.handle);
+      if (r.ok) {
+        setProvider(r.detail.settings.provider);
+        setModel(r.detail.settings.model ?? "");
+        setLoaded(true);
+      }
+    }
+  };
+  const save = async () => {
+    setBusy(true);
+    await updateAgentSettingsAction(friend.handle, { settings: { provider, model: model.trim() || null } });
+    setBusy(false);
+    setOpen(false); // 约 2s 内 poll 会刷新头部模型显示
+  };
+  const sugg = MODEL_SUGGESTIONS[isHosted ? provider : friend.agentKind ?? ""] ?? [];
+
+  return (
+    <div ref={ref} className="relative ml-auto">
+      <button
+        onClick={toggle}
+        className="flex items-center gap-1 rounded-md border border-line bg-panel px-1.5 py-0.5 text-[11px] text-dim transition-colors hover:border-accent/50 hover:text-accent"
+        title="点击切换模型"
+      >
+        <Cpu className="size-3" />
+        <span className="max-w-[10rem] truncate font-mono">{friend.agentModel ?? "模型"}</span>
+        <ChevronDown className="size-3 opacity-60" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1 w-60 space-y-2 rounded-xl border border-line bg-panel p-2.5 shadow-[0_12px_40px_-12px_rgb(28_36_51/.3)]">
+          <p className="text-[11px] font-medium text-dim">切换模型</p>
+          {isHosted && (
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              className="w-full rounded-lg border border-line bg-page px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+            >
+              {HOSTED_PROVIDERS.map((p) => (
+                <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+              ))}
+            </select>
+          )}
+          <input
+            value={model}
+            list="switch-model-list"
+            onChange={(e) => setModel(e.target.value)}
+            placeholder={sugg[0] ? `默认 · 例 ${sugg[0]}` : "留空用默认"}
+            className="w-full rounded-lg border border-line bg-page px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+          />
+          <datalist id="switch-model-list">
+            {sugg.map((m) => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
+          {!isHosted && <p className="text-[10px] leading-relaxed text-mute">传给本地 CLI 的 --model；留空用 CLI 默认</p>}
+          <button
+            onClick={save}
+            disabled={busy}
+            className="w-full rounded-lg bg-accent py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-deep disabled:opacity-50"
+          >
+            {busy ? "切换中…" : "切换"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -87,6 +87,10 @@ export interface Friend {
   isAgent?: boolean;
   /** hosted（平台托管）| local-claude | local-codex */
   agentKind?: string | null;
+  /** agent 当前使用的模型（解析后展示串，如 claude-haiku-4-5 / CLI 默认） */
+  agentModel?: string | null;
+  /** agent 的 provider（仅 hosted；用于快速切换面板） */
+  agentProvider?: string | null;
   /** agent 人设（编辑人设弹窗回显） */
   persona?: string | null;
   presence: { kind: PresenceKind; detail?: string; appSlug?: string; appIcon?: AppIconArt | null };
