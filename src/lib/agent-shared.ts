@@ -71,6 +71,34 @@ export const MODEL_SUGGESTIONS: Record<string, string[]> = {
   "local-qwen": ["qwen3-coder-plus", "qwen-plus"],
 };
 
+/** Agent 正在回答时随机展示的可爱状态文案（替代「正在处理：<消息>」，既可爱又不泄露对话内容） */
+export const AGENT_ACTIVITY_PHRASES = [
+  "正在奋力回答…",
+  "正在绞尽脑汁…",
+  "正在疯狂敲键盘…",
+  "正在头脑风暴…",
+  "正在翻书查资料…",
+  "正在认真思考…",
+  "正在码字中…",
+  "正在拼命运算…",
+  "正在冥思苦想…",
+  "正在组织语言…",
+  "正在搜索枯肠…",
+  "正在燃烧脑细胞…",
+  "正在飞速运转…",
+  "正在憋大招…",
+  "正在埋头苦干…",
+  "正在认真打字…",
+  "正在努力憋答案…",
+  "正在脑内编译…",
+];
+
+/** 从内置库 + 用户自定义库里随机取一条状态文案 */
+export function pickActivityPhrase(custom: string[] = []): string {
+  const pool = [...AGENT_ACTIVITY_PHRASES, ...custom.filter((p) => typeof p === "string" && p.trim())];
+  return pool[Math.floor(Math.random() * pool.length)] ?? "正在回答…";
+}
+
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   provider: "anthropic",
   model: null,

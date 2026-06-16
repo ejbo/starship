@@ -5,7 +5,7 @@ import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { GatewayError, runGatewayChat } from "@/lib/gateway-core";
 import { getSessionUserId } from "@/lib/session";
-import { DEFAULT_AGENT_SETTINGS, HOSTED_PROVIDERS, type AgentSettings } from "@/lib/agent-shared";
+import { DEFAULT_AGENT_SETTINGS, HOSTED_PROVIDERS, pickActivityPhrase, type AgentSettings } from "@/lib/agent-shared";
 
 export { HOSTED_PROVIDERS, type AgentSettings };
 
@@ -440,12 +440,13 @@ export async function claimTasks(agentId: string, max = 10): Promise<AgentTaskVi
 
 /** 连接器上报富状态（聊天里显示「正在处理…」）；detail 空 = 清除 */
 export async function setAgentActivity(agentId: string, detail: string): Promise<void> {
-  const clean = detail.trim().slice(0, 60);
+  // detail 仅作「在忙/不忙」信号——忙时存一条随机可爱文案（不存连接器传来的消息预览，避免在好友列表泄露对话内容）
+  const working = detail.trim().length > 0;
   const now = new Date().toISOString();
   await prisma.user.update({
     where: { id: agentId },
-    data: clean
-      ? { currentActivity: clean, currentActivitySlug: null, activityAt: now, lastSeenAt: now }
+    data: working
+      ? { currentActivity: pickActivityPhrase(), currentActivitySlug: null, activityAt: now, lastSeenAt: now }
       : { currentActivity: null, activityAt: null, lastSeenAt: now },
   });
 }

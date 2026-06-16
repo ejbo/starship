@@ -44,6 +44,17 @@ export async function reportRead(convKey: string, lastAt: string): Promise<void>
     update: { readAt: lastAt, channelId },
     create: { userId, scope, readAt: lastAt, channelId },
   });
+  // 私聊：活跃查看时同步把已读消息在库里标 read=true（此前只有「打开会话」时标记，
+  // 导致开着窗口收到/读过的消息在 DB 仍是未读 → 重载后持久化角标虚高）。
+  if (!channelId) {
+    const other = await prisma.user.findUnique({ where: { handle: convKey }, select: { id: true } });
+    if (other) {
+      await prisma.message.updateMany({
+        where: { fromId: other.id, toId: userId, read: false, at: { lte: lastAt } },
+        data: { read: true },
+      });
+    }
+  }
 }
 
 export interface TypingView {
