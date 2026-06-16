@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { claimTasks, touchAgentPoll } from "@/lib/agent-service";
+import { claimTasks, getAgentRuntimeConfig, touchAgentPoll } from "@/lib/agent-service";
 import { authAgent } from "../_auth";
 
 export const dynamic = "force-dynamic";
@@ -26,8 +26,11 @@ export async function GET(req: Request) {
   }
   if (tasks.length > 0) await touchAgentPoll(agent.id);
 
+  // 长轮询期间用户可能切了模型/开关同步：返回前重读，确保 model/syncFiles 与刚领取的任务同时刻一致
+  const live = await getAgentRuntimeConfig(agent.id);
+
   return NextResponse.json({
-    agent: { handle: agent.handle, name: agent.name, kind: agent.agentKind, persona: agent.persona, owner: agent.ownerName, model: agent.model, syncFiles: agent.syncFiles },
+    agent: { handle: agent.handle, name: agent.name, kind: agent.agentKind, persona: agent.persona, owner: agent.ownerName, model: live.model, syncFiles: live.syncFiles },
     tasks,
   });
 }

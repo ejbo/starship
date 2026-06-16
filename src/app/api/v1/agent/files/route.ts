@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   const agent = await authAgent(req);
   if (!agent) return NextResponse.json({ error: "invalid_token" }, { status: 401 });
 
-  let payload: { files?: { path: string; content: string }[]; acked?: string[] };
+  let payload: { files?: { path: string; content: string }[]; acked?: (string | { path: string; version?: string })[] };
   try {
     payload = await req.json();
   } catch {
@@ -24,8 +24,13 @@ export async function POST(req: Request) {
   const files = Array.isArray(payload.files)
     ? payload.files.filter((f) => f && typeof f.path === "string" && typeof f.content === "string")
     : [];
-  const acked = Array.isArray(payload.acked) ? payload.acked.filter((p): p is string => typeof p === "string") : [];
+  // acked 兼容旧连接器（string）与新格式（{path,version}）：version 用于防旧版本误确认
+  const acked = Array.isArray(payload.acked)
+    ? payload.acked
+        .map((a) => (typeof a === "string" ? { path: a, version: null } : a && typeof a.path === "string" ? { path: a.path, version: typeof a.version === "string" ? a.version : null } : null))
+        .filter((a): a is { path: string; version: string | null } => a !== null)
+    : [];
 
   const pending = await syncAgentFiles(agent.id, files, acked);
-  return NextResponse.json({ pending: pending.map((p) => ({ path: p.path, content: p.content })) });
+  return NextResponse.json({ pending: pending.map((p) => ({ path: p.path, content: p.content, version: p.updatedAt })) });
 }

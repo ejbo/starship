@@ -137,7 +137,8 @@ async function syncWorkdirFiles() {
         if (full !== DIR && !full.startsWith(DIR + "/")) continue; // 仅允许写入工作目录内（防 ../ 穿越）
         mkdirSync(join(full, ".."), { recursive: true });
         writeFileSync(full, p.content ?? "");
-        pendingAck.push(p.path);
+        // ack 带版本：仅当库中版本仍是这一版时才清 pendingPush，防把写回后又被网页改过的新编辑误确认
+        pendingAck.push({ path: p.path, version: p.version ?? null });
         log(`↧ 已写回网页编辑：${p.path}`);
       } catch (e) {
         log(`写回失败 ${p.path}：${e.message}`);
@@ -226,7 +227,11 @@ async function runCodex(prompt, convKey) {
     if (sessions[convKey]) {
       delete sessions[convKey];
       saveSessions();
-      out = await run("codex", ["exec", "--json", "--skip-git-repo-check", ...(FULL_AUTO ? ["--dangerously-bypass-approvals-and-sandbox"] : []), "-"], prompt, DIR);
+      // 重开会话也要带上当前模型，否则回落 codex 默认模型
+      const retry = ["exec", "--json", "--skip-git-repo-check", ...(FULL_AUTO ? ["--dangerously-bypass-approvals-and-sandbox"] : [])];
+      if (liveModel) retry.push("-m", liveModel);
+      retry.push("-");
+      out = await run("codex", retry, prompt, DIR);
     } else throw e;
   }
   let text = "";

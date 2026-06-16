@@ -149,6 +149,7 @@ async function ownedAgentOrThrow(handle: string) {
 export async function deleteAgent(handle: string): Promise<void> {
   const agent = await ownedAgentOrThrow(handle);
   await prisma.agentTask.deleteMany({ where: { agentId: agent.id } });
+  await prisma.agentFile.deleteMany({ where: { agentId: agent.id } }); // AgentFile 无 FK 级联，手动清，防孤儿累积
   await prisma.user.delete({ where: { id: agent.id } }); // 消息/群成员/好友边随级联清掉
 }
 
@@ -292,18 +293,27 @@ const MAX_FILES = 60;
 export async function syncAgentFiles(
   agentId: string,
   files: { path: string; content: string }[],
-  acked: string[],
+  acked: { path: string; version: string | null }[],
 ): Promise<AgentFileView[]> {
   const now = new Date().toISOString();
-  // 先清除已写回的 pendingPush
+  // 写回确认：仅当连接器写回的版本仍等于库中当前 updatedAt 时才清 pendingPush，
+  // 否则说明网页在连接器写回后又改过（V2），不能清——防止旧版本 ack 把新编辑“确认”掉。
   if (acked.length > 0) {
-    await prisma.agentFile.updateMany({ where: { agentId, path: { in: acked.slice(0, MAX_FILES) } }, data: { pendingPush: false } });
+    const ackPaths = acked.slice(0, MAX_FILES).map((a) => a.path);
+    const rows = await prisma.agentFile.findMany({ where: { agentId, path: { in: ackPaths } }, select: { path: true, updatedAt: true } });
+    const curVer = new Map(rows.map((r) => [r.path, r.updatedAt]));
+    const ackable = acked
+      .filter((a) => a.version === null || curVer.get(a.path) === a.version) // version=null：旧连接器，沿用无条件清除
+      .map((a) => a.path);
+    if (ackable.length > 0) {
+      await prisma.agentFile.updateMany({ where: { agentId, path: { in: ackable } }, data: { pendingPush: false } });
+    }
   }
-  // 当前各文件的 pendingPush 状态（避免覆盖网页未写回的编辑）
+  // 重读 pendingPush（清除后）：仍 pending 的文件 = 网页有未写回编辑，连接器上传不得覆盖
   const existing = await prisma.agentFile.findMany({ where: { agentId }, select: { path: true, pendingPush: true } });
-  const pendingSet = new Set(existing.filter((e) => e.pendingPush && !acked.includes(e.path)).map((e) => e.path));
+  const pendingSet = new Set(existing.filter((e) => e.pendingPush).map((e) => e.path));
   for (const f of files.slice(0, MAX_FILES)) {
-    if (pendingSet.has(f.path)) continue; // 网页有未写回编辑，保留网页版本
+    if (pendingSet.has(f.path)) continue;
     const content = typeof f.content === "string" ? f.content.slice(0, MAX_FILE_BYTES) : "";
     await prisma.agentFile.upsert({
       where: { agentId_path: { agentId, path: f.path } },
@@ -311,8 +321,7 @@ export async function syncAgentFiles(
       create: { agentId, path: f.path, content, updatedAt: now },
     });
   }
-  const pending = await prisma.agentFile.findMany({ where: { agentId, pendingPush: true }, select: { path: true, content: true, pendingPush: true, updatedAt: true } });
-  return pending;
+  return prisma.agentFile.findMany({ where: { agentId, pendingPush: true }, select: { path: true, content: true, pendingPush: true, updatedAt: true } });
 }
 
 /** owner 查看该 agent 的文件镜像 */
@@ -338,6 +347,13 @@ export async function saveAgentFile(handle: string, path: string, content: strin
 export async function touchAgentPoll(agentId: string): Promise<void> {
   const now = new Date().toISOString();
   await prisma.user.update({ where: { id: agentId }, data: { agentLastPollAt: now, lastSeenAt: now } });
+}
+
+/** 取该 agent 当前的实时配置（model/syncFiles）——长轮询返回前重读，确保与刚领取的任务同一时刻一致 */
+export async function getAgentRuntimeConfig(agentId: string): Promise<{ model: string | null; syncFiles: boolean }> {
+  const u = await prisma.user.findUnique({ where: { id: agentId }, select: { agentSettings: true } });
+  const s = getAgentSettings(u?.agentSettings);
+  return { model: s.model, syncFiles: s.syncFiles };
 }
 
 export interface AgentTaskView {
