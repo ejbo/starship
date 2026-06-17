@@ -14,9 +14,10 @@ function pairScope(a: string, b: string): string {
   return "dm:" + [a, b].sort().join("~");
 }
 
-/** convKey（handle 或 c:<channelId>）→ 规范 scope */
+/** convKey（handle / c:<channelId> / t:<threadId>）→ 规范 scope */
 async function toScope(convKey: string, myId: string): Promise<string | null> {
   if (convKey.startsWith("c:")) return "ch:" + convKey.slice(2);
+  if (convKey.startsWith("t:")) return "th:" + convKey.slice(2); // agent 多会话线程
   const other = await prisma.user.findUnique({ where: { handle: convKey }, select: { id: true } });
   return other ? pairScope(myId, other.id) : null;
 }
@@ -44,9 +45,16 @@ export async function reportRead(convKey: string, lastAt: string): Promise<void>
     update: { readAt: lastAt, channelId },
     create: { userId, scope, readAt: lastAt, channelId },
   });
-  // 私聊：活跃查看时同步把已读消息在库里标 read=true（此前只有「打开会话」时标记，
+  // 活跃查看时同步把已读消息在库里标 read=true（此前只有「打开会话」时标记，
   // 导致开着窗口收到/读过的消息在 DB 仍是未读 → 重载后持久化角标虚高）。
-  if (!channelId) {
+  if (convKey.startsWith("t:")) {
+    // agent 多会话：标记该线程内发给我的、截至 lastAt 的消息为已读
+    const threadId = convKey.slice(2);
+    const t = await prisma.agentThread.findUnique({ where: { id: threadId }, select: { ownerId: true } });
+    if (t && t.ownerId === userId) {
+      await prisma.message.updateMany({ where: { threadId, toId: userId, read: false, at: { lte: lastAt } }, data: { read: true } });
+    }
+  } else if (!channelId) {
     const other = await prisma.user.findUnique({ where: { handle: convKey }, select: { id: true } });
     if (other) {
       await prisma.message.updateMany({

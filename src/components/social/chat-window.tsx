@@ -16,9 +16,11 @@ import {
   FileText,
   Hash,
   Headphones,
+  MessageSquare,
   Mic,
   MicOff,
   Paperclip,
+  Pencil,
   Phone,
   PhoneOff,
   Play,
@@ -44,6 +46,7 @@ import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/cn";
 import type { GroupMember, GroupSummary } from "@/lib/group-service";
 import type { MessageKind } from "@/lib/message-service";
+import type { AgentThreadView } from "@/lib/thread-service";
 import type { VoiceRoomSnapshot } from "@/lib/voice-room-service";
 import type { Friend, PresenceKind } from "@/lib/types";
 import { GroupAvatar, type Me } from "./friends-panel";
@@ -77,6 +80,10 @@ export const groupIdOf = (k: string) => k.slice(2);
 export const channelConvKey = (channelId: string) => `c:${channelId}`;
 export const isChannelConvKey = (k: string) => k.startsWith("c:");
 export const channelIdOf = (k: string) => k.slice(2);
+// —— Agent 多会话：会话线程 = "t:<threadId>"（agent 私聊 tab 仍是 handle，内部按线程切分） ——
+export const threadConvKey = (threadId: string) => `t:${threadId}`;
+export const isThreadConvKey = (k: string) => k.startsWith("t:");
+export const threadIdOf = (k: string) => k.slice(2);
 
 const MIN_W = 320;
 const MIN_H = 360;
@@ -104,6 +111,10 @@ interface ChatWindowProps {
   channelSel: Record<string, string>;
   mutedGroups: Set<string>;
   mutedChannels: Set<string>;
+  /** agent handle → 会话线程列表（仅 agent 私聊使用） */
+  agentThreads: Record<string, AgentThreadView[]>;
+  /** agent handle → 当前选中线程 id */
+  threadSel: Record<string, string>;
   /** convKey → 正在输入的人 */
   typing: Record<string, { handle: string; name: string }[]>;
   /** DM convKey → 对方已读到的消息时刻 */
@@ -118,6 +129,10 @@ interface ChatWindowProps {
   onSend: (convKey: string, body: string, input?: SendPayload) => void;
   onLoadOlder: (convKey: string) => Promise<boolean>;
   onSelectChannel: (groupId: string, channelId: string) => void;
+  onSelectThread: (handle: string, threadId: string) => void;
+  onNewThread: (handle: string) => void;
+  onRenameThread: (handle: string, threadId: string) => void;
+  onDeleteThread: (handle: string, threadId: string) => void;
   /** groupId 为空 = 从私聊发起建群（预选当前好友） */
   onInvite: (groupId: string | null, preselect: string[]) => void;
   onToggleMute: (groupId: string) => void;
@@ -186,12 +201,23 @@ export function ChatWindow(props: ChatWindowProps) {
   const activeIsGroup = !!activeChat && isGroupKey(activeChat);
   const activeFriend = activeChat && !activeIsGroup ? friendOf(activeChat) : null;
   const activeGroup = activeChat && activeIsGroup ? groupOf(activeChat) : null;
+  const activeIsAgent = !!activeFriend?.isAgent;
   // 所选频道可能已被删除：校验后回退到第一个文字频道（与 social-layer 的 currentChannelId 一致）
   const selectedChannel = activeGroup ? channelSel[activeGroup.id] : undefined;
   const activeChannelId = activeGroup
     ? (selectedChannel && activeGroup.channels.some((c) => c.id === selectedChannel) ? selectedChannel : activeGroup.channels.find((c) => c.kind === "text")?.id) ?? null
     : null;
-  const convKey = activeIsGroup ? (activeChannelId ? channelConvKey(activeChannelId) : null) : activeChat;
+  // agent 私聊：tab=handle，内部按线程切分；所选线程可能已删 → 回退到第一条（与 social-layer 的 currentThreadId 一致）
+  const agentThreads = activeIsAgent && activeChat ? props.agentThreads[activeChat] ?? [] : [];
+  const selectedThread = activeChat ? props.threadSel[activeChat] : undefined;
+  const activeThreadId = activeIsAgent
+    ? ((selectedThread && agentThreads.some((t) => t.id === selectedThread) ? selectedThread : agentThreads[0]?.id) ?? null)
+    : null;
+  const convKey = activeIsGroup
+    ? (activeChannelId ? channelConvKey(activeChannelId) : null)
+    : activeIsAgent
+      ? (activeThreadId ? threadConvKey(activeThreadId) : null)
+      : activeChat;
   const conv = convKey ? conversations[convKey] : undefined;
   const messages = conv?.messages ?? [];
   const draft = convKey ? drafts[convKey] ?? "" : "";
@@ -805,11 +831,22 @@ export function ChatWindow(props: ChatWindowProps) {
           </div>
         </div>
 
-        {/* —— 私聊 —— */}
-        {activeFriend && (
-          <>
-            {/* Agent 私聊：常驻状态条，离线本地 agent 明确告知「消息已排队，连接器上线后处理」 */}
-            {activeFriend.isAgent && (
+        {/* —— Agent 私聊（左侧会话线程栏 + 消息列） —— */}
+        {activeFriend && activeIsAgent && (
+          <div className="flex min-h-0 grow items-stretch">
+            {showChannels && (
+              <ThreadSidebar
+                threads={agentThreads}
+                activeThreadId={activeThreadId}
+                unread={unread}
+                onSelect={(tid) => props.onSelectThread(activeFriend.handle, tid)}
+                onNew={() => props.onNewThread(activeFriend.handle)}
+                onRename={(tid) => props.onRenameThread(activeFriend.handle, tid)}
+                onDelete={(tid) => props.onDeleteThread(activeFriend.handle, tid)}
+              />
+            )}
+            <div className="relative flex min-w-0 grow flex-col border-l border-line">
+              {/* 常驻状态条：离线本地 agent 明确告知「消息已排队，连接器上线后处理」 + 模型切换 */}
               <div className="flex items-center gap-1.5 border-b border-line bg-card-hi/50 px-3 py-1.5 text-[11px]">
                 <Bot className={cn("size-3.5", activeFriend.presence.kind === "offline" ? "text-mute" : "text-green")} />
                 {activeFriend.presence.kind === "offline" && activeFriend.agentKind !== "hosted" ? (
@@ -819,7 +856,16 @@ export function ChatWindow(props: ChatWindowProps) {
                 )}
                 <AgentModelSwitcher friend={activeFriend} />
               </div>
-            )}
+              {messageArea}
+              {scrollDownBtn}
+              {inputBar}
+            </div>
+          </div>
+        )}
+
+        {/* —— 人类私聊 —— */}
+        {activeFriend && !activeIsAgent && (
+          <>
             <div className="relative flex min-h-0 grow flex-col">
               {messageArea}
               {scrollDownBtn}
@@ -955,6 +1001,78 @@ function ChatTab({
       >
         <X className="size-3" />
       </span>
+    </div>
+  );
+}
+
+// ———————————————————— Agent 会话线程栏 ————————————————————
+function ThreadSidebar({
+  threads,
+  activeThreadId,
+  unread,
+  onSelect,
+  onNew,
+  onRename,
+  onDelete,
+}: {
+  threads: AgentThreadView[];
+  activeThreadId: string | null;
+  unread: Record<string, number>;
+  onSelect: (threadId: string) => void;
+  onNew: () => void;
+  onRename: (threadId: string) => void;
+  onDelete: (threadId: string) => void;
+}) {
+  return (
+    <div className="flex w-44 shrink-0 flex-col overflow-y-auto py-1.5">
+      <div className="flex items-center justify-between px-2 pb-1 pt-1">
+        <span className="px-1 text-[10px] font-semibold tracking-wide text-mute">对话</span>
+        <button onClick={onNew} className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-dim transition-colors hover:bg-card-hi hover:text-accent" title="开始新对话">
+          <Plus className="size-3" /> 新对话
+        </button>
+      </div>
+      {threads.length === 0 ? (
+        <p className="px-3 py-1.5 text-[11px] text-mute">加载中…</p>
+      ) : (
+        threads.map((t) => {
+          const active = t.id === activeThreadId;
+          const count = unread[threadConvKey(t.id)] ?? 0;
+          return (
+            <div
+              key={t.id}
+              onClick={() => onSelect(t.id)}
+              className={cn(
+                "group mx-1 flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors",
+                active ? "bg-accent/12 text-accent" : "text-dim hover:bg-card-hi",
+              )}
+            >
+              <MessageSquare className={cn("size-3 shrink-0", active ? "text-accent" : "opacity-60")} />
+              <span className="min-w-0 grow truncate">{t.title.trim() || "新对话"}</span>
+              {count > 0 && !active && (
+                <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-danger text-[9px] font-bold text-white">{Math.min(count, 99)}</span>
+              )}
+              <span className="ml-0.5 hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onRename(t.id); }}
+                  className="rounded p-0.5 text-mute hover:bg-panel hover:text-ink"
+                  title="重命名"
+                  aria-label="重命名对话"
+                >
+                  <Pencil className="size-3" />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDelete(t.id); }}
+                  className="rounded p-0.5 text-mute hover:bg-panel hover:text-danger"
+                  title="删除"
+                  aria-label="删除对话"
+                >
+                  <Trash2 className="size-3" />
+                </button>
+              </span>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }

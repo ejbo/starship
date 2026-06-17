@@ -6,26 +6,32 @@ import { Bot, Copy, KeyRound, MessageSquare, Store, Terminal, Trash2, UserMinus,
 import { deleteAgentAction, getAgentCommandAction, resetAgentTokenAction, type ConnectorCommand } from "@/app/agents-actions";
 import {
   addFriendAction,
+  createAgentThreadAction,
   createGroupAction,
+  deleteAgentThreadAction,
   deleteMessageAction,
   editMessageAction,
   inviteToGroupAction,
   joinVoiceRoomAction,
   leaveVoiceRoomAction,
+  listAgentThreadsAction,
   loadChannelAction,
   loadConversationAction,
+  loadThreadAction,
   loadUnreadCountsAction,
   pollUpdatesAction,
   recentFriendsAction,
   refreshGroupsAction,
   refreshSocialAction,
   removeFriendAction,
+  renameAgentThreadAction,
   reportReadAction,
   reportTypingAction,
   respondRequestAction,
   searchUsersAction,
   sendGroupMessageAction,
   sendMessageAction,
+  sendThreadMessageAction,
   setMicAction,
   setRemarkAction,
   toggleReactionAction,
@@ -36,7 +42,8 @@ import type { GroupSummary } from "@/lib/group-service";
 import type { ChatMessage } from "@/lib/message-service";
 import type { Friend } from "@/lib/types";
 import { AgentModal, AgentSettingsModal, ConnectorCommandModal } from "./agent-modal";
-import { channelConvKey, channelIdOf, ChatWindow, groupIdOf, groupKey, isChannelConvKey, isGroupKey, type SendPayload } from "./chat-window";
+import { channelConvKey, channelIdOf, ChatWindow, groupIdOf, groupKey, isChannelConvKey, isGroupKey, isThreadConvKey, threadConvKey, threadIdOf, type SendPayload } from "./chat-window";
+import type { AgentThreadView } from "@/lib/thread-service";
 import type { VoiceRoomSnapshot } from "@/lib/voice-room-service";
 import type { MessageMutation } from "./presence";
 import { AddFriendView, FriendsPanel, type Me } from "./friends-panel";
@@ -91,6 +98,10 @@ export function SocialLayer({
   const [openChats, setOpenChats] = useState<string[]>([]);
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [channelSel, setChannelSel] = useState<Record<string, string>>({});
+  /** agent handle → 会话线程列表 */
+  const [agentThreads, setAgentThreads] = useState<Record<string, AgentThreadView[]>>({});
+  /** agent handle → 当前选中线程 id */
+  const [threadSel, setThreadSel] = useState<Record<string, string>>({});
   const [conversations, setConversations] = useState<Record<string, Conversation>>({});
   const [unread, setUnread] = useState<Record<string, number>>({});
   const [markers, setMarkers] = useState<Record<string, string | null>>({});
@@ -115,6 +126,10 @@ export function SocialLayer({
   activeChatRef.current = activeChat;
   const channelSelRef = useRef(channelSel);
   channelSelRef.current = channelSel;
+  const agentThreadsRef = useRef(agentThreads);
+  agentThreadsRef.current = agentThreads;
+  const threadSelRef = useRef(threadSel);
+  threadSelRef.current = threadSel;
   const friendsRef = useRef(friends);
   friendsRef.current = friends;
   const groupsRef = useRef(groups);
@@ -131,6 +146,8 @@ export function SocialLayer({
   openChatsRef.current = openChats;
   /** 已被用户看过一次的未读分隔线（再次打开时清除，Steam 行为） */
   const markerSeenRef = useRef<Set<string>>(new Set());
+  /** pushToast 在组件后段定义，线程 CRUD 早于它声明 → 用 ref 转发避免 TDZ */
+  const pushToastRef = useRef<((title: string, body: string, chatKey: string) => void) | null>(null);
 
   // —— 通知声（WebAudio，裸 http 可用；浏览器 autoplay 需先有交互） ——
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -263,6 +280,44 @@ export function SocialLayer({
     [],
   );
 
+  // —— Agent 多会话（线程）辅助 ——
+  const isAgentHandle = useCallback((handle: string) => !!friendsRef.current.find((f) => f.handle === handle)?.isAgent, []);
+
+  /** 反查某线程属于哪个 agent handle（消息/历史加载时定位发送者） */
+  const handleOfThread = useCallback((threadId: string): string | null => {
+    for (const h in agentThreadsRef.current) {
+      if (agentThreadsRef.current[h].some((t) => t.id === threadId)) return h;
+    }
+    return null;
+  }, []);
+
+  /** 某 agent 当前选中的线程（未选过或所选已删 → 第一条） */
+  const currentThreadId = useCallback((handle: string): string | null => {
+    const threads = agentThreadsRef.current[handle];
+    if (!threads || threads.length === 0) return null;
+    const sel = threadSelRef.current[handle];
+    if (sel && threads.some((t) => t.id === sel)) return sel;
+    return threads[0].id;
+  }, []);
+
+  /** 拉取某 agent 的线程列表（含 AI 标题/排序刷新）；同步 ref 以便同一微任务内可读到 */
+  const loadAgentThreads = useCallback(async (handle: string): Promise<AgentThreadView[]> => {
+    try {
+      const threads = await listAgentThreadsAction(handle);
+      agentThreadsRef.current = { ...agentThreadsRef.current, [handle]: threads };
+      setAgentThreads((cur) => ({ ...cur, [handle]: threads }));
+      const prevSel = threadSelRef.current[handle];
+      const sel = prevSel && threads.some((t) => t.id === prevSel) ? prevSel : threads[0]?.id;
+      if (sel && sel !== prevSel) {
+        threadSelRef.current = { ...threadSelRef.current, [handle]: sel };
+        setThreadSel((cur) => ({ ...cur, [handle]: sel }));
+      }
+      return threads;
+    } catch {
+      return agentThreadsRef.current[handle] ?? [];
+    }
+  }, []);
+
   const ensureLoaded = useCallback(
     async (convKey: string) => {
       if (loadedRef.current.has(convKey)) return;
@@ -271,7 +326,9 @@ export function SocialLayer({
       try {
         const page = isChannelConvKey(convKey)
           ? await loadChannelAction(channelIdOf(convKey))
-          : await loadConversationAction(convKey).then((p) => ({ messages: mapFriendMessages(convKey, p.messages), hasMore: p.hasMore }));
+          : isThreadConvKey(convKey)
+            ? await loadThreadAction(threadIdOf(convKey)).then((p) => ({ messages: mapFriendMessages(handleOfThread(threadIdOf(convKey)) ?? "", p.messages), hasMore: p.hasMore }))
+            : await loadConversationAction(convKey).then((p) => ({ messages: mapFriendMessages(convKey, p.messages), hasMore: p.hasMore }));
         setConversations((c) => {
           // 加载在途时轮询/乐观发送可能已 append：按 id 合并，别整体覆盖
           const pending = (c[convKey]?.messages ?? []).filter((m) => !page.messages.some((p) => p.id === m.id));
@@ -286,7 +343,7 @@ export function SocialLayer({
         });
       }
     },
-    [mapFriendMessages],
+    [mapFriendMessages, handleOfThread],
   );
 
   /** 进入会话视图时的未读分隔线处理：第一次保留展示，第二次进入清掉（副作用不能放进 setState updater） */
@@ -317,6 +374,16 @@ export function SocialLayer({
     });
   }, []);
 
+  /** 清某线程未读，agent tab 计数重算为其余线程之和 */
+  const clearThreadUnread = useCallback((handle: string, threadId: string) => {
+    const threads = agentThreadsRef.current[handle] ?? [];
+    setUnread((u) => {
+      const next = { ...u, [threadConvKey(threadId)]: 0 };
+      next[handle] = threads.reduce((acc, t) => acc + (next[threadConvKey(t.id)] ?? 0), 0);
+      return next;
+    });
+  }, []);
+
   const activateKey = useCallback(
     (key: string) => {
       setActiveChat(key);
@@ -327,21 +394,34 @@ export function SocialLayer({
           clearChannelUnread(g!.id, cid);
           touchMarker(channelConvKey(cid));
         }
+      } else if (isAgentHandle(key)) {
+        const tid = currentThreadId(key);
+        if (tid) {
+          clearThreadUnread(key, tid);
+          touchMarker(threadConvKey(tid));
+        }
       } else {
         setUnread((u) => ({ ...u, [key]: 0 }));
         touchMarker(key);
       }
     },
-    [clearChannelUnread, currentChannelId, touchMarker],
+    [clearChannelUnread, clearThreadUnread, currentChannelId, currentThreadId, isAgentHandle, touchMarker],
   );
 
   const openChat = useCallback(
     async (handle: string) => {
       setOpenChats((cur) => (cur.includes(handle) ? cur : [...cur, handle]));
-      activateKey(handle);
-      await ensureLoaded(handle);
+      if (isAgentHandle(handle)) {
+        await loadAgentThreads(handle);
+        const tid = currentThreadId(handle);
+        if (tid) await ensureLoaded(threadConvKey(tid));
+        activateKey(handle);
+      } else {
+        activateKey(handle);
+        await ensureLoaded(handle);
+      }
     },
-    [activateKey, ensureLoaded],
+    [activateKey, ensureLoaded, isAgentHandle, loadAgentThreads, currentThreadId],
   );
 
   const openGroup = useCallback(
@@ -374,6 +454,80 @@ export function SocialLayer({
     [clearChannelUnread, ensureLoaded, touchMarker],
   );
 
+  // —— Agent 会话线程：切换 / 新建 / 改名 / 删除 ——
+  const selectThread = useCallback(
+    async (handle: string, threadId: string) => {
+      threadSelRef.current = { ...threadSelRef.current, [handle]: threadId };
+      setThreadSel((cur) => ({ ...cur, [handle]: threadId }));
+      clearThreadUnread(handle, threadId);
+      await ensureLoaded(threadConvKey(threadId));
+      touchMarker(threadConvKey(threadId));
+    },
+    [clearThreadUnread, ensureLoaded, touchMarker],
+  );
+
+  const newThread = useCallback(
+    async (handle: string) => {
+      try {
+        const t = await createAgentThreadAction(handle);
+        const threads = [t, ...(agentThreadsRef.current[handle] ?? [])];
+        agentThreadsRef.current = { ...agentThreadsRef.current, [handle]: threads };
+        setAgentThreads((cur) => ({ ...cur, [handle]: threads }));
+        await selectThread(handle, t.id);
+      } catch {
+        pushToastRef.current?.("新建失败", "网络异常，请重试", handle);
+      }
+    },
+    [selectThread],
+  );
+
+  const renameThread = useCallback(async (handle: string, threadId: string) => {
+    const cur = (agentThreadsRef.current[handle] ?? []).find((t) => t.id === threadId);
+    const next = window.prompt("重命名对话", cur?.title ?? "");
+    if (next === null) return;
+    const title = next.trim().slice(0, 60);
+    if (!title) return;
+    const updated = (agentThreadsRef.current[handle] ?? []).map((t) => (t.id === threadId ? { ...t, title } : t));
+    agentThreadsRef.current = { ...agentThreadsRef.current, [handle]: updated };
+    setAgentThreads((c) => ({ ...c, [handle]: updated }));
+    try {
+      await renameAgentThreadAction(threadId, title);
+    } catch {
+      await loadAgentThreads(handle); // 失败则回滚到服务端真值
+    }
+  }, [loadAgentThreads]);
+
+  const deleteThread = useCallback(async (handle: string, threadId: string) => {
+    const threads = agentThreadsRef.current[handle] ?? [];
+    if (threads.length <= 1) {
+      pushToastRef.current?.("无法删除", "至少保留一个对话", handle);
+      return;
+    }
+    if (!window.confirm("删除这个对话？聊天记录会一并清除。")) return;
+    try {
+      await deleteAgentThreadAction(threadId);
+    } catch {
+      pushToastRef.current?.("删除失败", "网络异常，请重试", handle);
+      return;
+    }
+    const remaining = threads.filter((t) => t.id !== threadId);
+    agentThreadsRef.current = { ...agentThreadsRef.current, [handle]: remaining };
+    setAgentThreads((c) => ({ ...c, [handle]: remaining }));
+    loadedRef.current.delete(threadConvKey(threadId));
+    setConversations((c) => {
+      const { [threadConvKey(threadId)]: _drop, ...rest } = c;
+      return rest;
+    });
+    setUnread((u) => {
+      const { [threadConvKey(threadId)]: _drop, ...rest } = u;
+      rest[handle] = remaining.reduce((acc, t) => acc + (rest[threadConvKey(t.id)] ?? 0), 0);
+      return rest;
+    });
+    if ((threadSelRef.current[handle] ?? null) === threadId && remaining[0]) {
+      await selectThread(handle, remaining[0].id);
+    }
+  }, [selectThread]);
+
   // 恢复时预加载已打开的会话
   useEffect(() => {
     if (!restored) return;
@@ -382,11 +536,16 @@ export function SocialLayer({
         const g = groupsRef.current.find((x) => x.id === groupIdOf(key));
         const cid = g ? currentChannelId(g) : null;
         if (cid) void ensureLoaded(channelConvKey(cid));
+      } else if (isAgentHandle(key)) {
+        void loadAgentThreads(key).then(() => {
+          const tid = currentThreadId(key);
+          if (tid) void ensureLoaded(threadConvKey(tid));
+        });
       } else {
         void ensureLoaded(key);
       }
     });
-  }, [restored, openChats, ensureLoaded, currentChannelId]);
+  }, [restored, openChats, ensureLoaded, currentChannelId, isAgentHandle, loadAgentThreads, currentThreadId]);
 
   const loadOlder = useCallback(async (convKey: string) => {
     const conv = conversationsRef.current[convKey];
@@ -401,12 +560,15 @@ export function SocialLayer({
     if (isChannelConvKey(convKey)) {
       const page = await loadChannelAction(channelIdOf(convKey), oldest);
       merge(page.messages, page.hasMore);
+    } else if (isThreadConvKey(convKey)) {
+      const page = await loadThreadAction(threadIdOf(convKey), oldest);
+      merge(mapFriendMessages(handleOfThread(threadIdOf(convKey)) ?? "", page.messages), page.hasMore);
     } else {
       const page = await loadConversationAction(convKey, oldest);
       merge(mapFriendMessages(convKey, page.messages), page.hasMore);
     }
     return true;
-  }, [mapFriendMessages]);
+  }, [mapFriendMessages, handleOfThread]);
 
   const closeChat = useCallback((key: string) => {
     setOpenChats((cur) => {
@@ -487,6 +649,7 @@ export function SocialLayer({
     setToasts((t) => [...t, { id, title, body, chatKey }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
   }, []);
+  pushToastRef.current = pushToast;
 
   // —— 轮询：新消息 + 消息变更 + typing/已读 + 语音房间 + 好友/群组/状态（每 2s） ——
   const sinceRef = useRef<string>(new Date().toISOString());
@@ -502,6 +665,9 @@ export function SocialLayer({
             const g = groupsRef.current.find((x) => x.id === groupIdOf(key));
             const cid = g ? currentChannelId(g) : null;
             if (cid) openConvKeys.push(channelConvKey(cid));
+          } else if (isAgentHandle(key)) {
+            const tid = currentThreadId(key);
+            if (tid) openConvKeys.push(threadConvKey(tid));
           } else openConvKeys.push(key);
         }
         const voiceRoomIds = groupsRef.current.flatMap((g) => g.channels.filter((c) => c.kind === "voice").map((c) => c.id));
@@ -517,7 +683,7 @@ export function SocialLayer({
         for (const m of res.messages) {
           const handle = m.from;
           const f = res.friends.find((x) => x.handle === handle);
-          appendMessage(handle, {
+          const vm: ViewMessage = {
             id: m.id,
             kind: m.kind,
             body: m.body,
@@ -528,13 +694,30 @@ export function SocialLayer({
             updatedAt: m.updatedAt,
             reactions: [],
             sender: { handle, name: m.fromName, avatarHue: f?.avatarHue ?? 0, avatarUrl: f?.avatarUrl ?? null, isAgent: f?.isAgent },
-          });
-          if (activeChatRef.current !== handle) {
-            markUnread(handle, handle, m.id);
-            pushToast(m.fromName, preview(m.kind, m.body, m.attachmentName), handle);
-            playPing();
+          };
+          if (m.threadId) {
+            // agent 多会话：路由到对应线程；未知线程（新建/默认线程迁移）→ 拉取使其出现在左栏
+            const ck = threadConvKey(m.threadId);
+            if (!(agentThreadsRef.current[handle] ?? []).some((t) => t.id === m.threadId)) void loadAgentThreads(handle);
+            appendMessage(ck, vm);
+            const watching = activeChatRef.current === handle && currentThreadId(handle) === m.threadId;
+            if (!watching) {
+              markUnread(handle, ck, m.id);
+              pushToast(m.fromName, preview(m.kind, m.body, m.attachmentName), handle);
+              playPing();
+            }
+          } else {
+            appendMessage(handle, vm);
+            if (activeChatRef.current !== handle) {
+              markUnread(handle, handle, m.id);
+              pushToast(m.fromName, preview(m.kind, m.body, m.attachmentName), handle);
+              playPing();
+            }
           }
         }
+        // agent 多会话：活跃查看某 agent 时刷新其线程（AI 标题 / 最近活动排序保持最新）
+        const activeNow = activeChatRef.current;
+        if (activeNow && isAgentHandle(activeNow)) void loadAgentThreads(activeNow);
 
         for (const m of res.groupMessages) {
           const chatKey = groupKey(m.groupId);
@@ -577,7 +760,7 @@ export function SocialLayer({
       alive = false;
       clearTimeout(timer);
     };
-  }, [appendMessage, markUnread, patchMessage, pushToast, currentChannelId]);
+  }, [appendMessage, markUnread, patchMessage, pushToast, currentChannelId, isAgentHandle, currentThreadId, loadAgentThreads]);
 
   // 外部页面（如库详情页的「哪些好友在玩」）通过自定义事件触发：双击开聊天 / 右键菜单
   useEffect(() => {
@@ -639,7 +822,9 @@ export function SocialLayer({
       try {
         const real = isChannelConvKey(convKey)
           ? await sendGroupMessageAction(channelIdOf(convKey), body, payload)
-          : await sendMessageAction(convKey, body, payload);
+          : isThreadConvKey(convKey)
+            ? await sendThreadMessageAction(threadIdOf(convKey), body, payload)
+            : await sendMessageAction(convKey, body, payload);
         // 用真实 id 替换乐观消息（否则自己刚发的消息因 tmp id 无法被反应/编辑/删除）
         setConversations((c) => {
           const conv = c[convKey];
@@ -661,7 +846,9 @@ export function SocialLayer({
         );
         const chatKey = isChannelConvKey(convKey)
           ? groupKey(groupsRef.current.find((g) => g.channels.some((ch) => ch.id === channelIdOf(convKey)))?.id ?? "")
-          : convKey;
+          : isThreadConvKey(convKey)
+            ? handleOfThread(threadIdOf(convKey)) ?? ""
+            : convKey;
         pushToast("发送失败", "网络异常或没有权限，消息未送达", chatKey);
       }
     },
@@ -783,8 +970,8 @@ export function SocialLayer({
     setMenu({ friend, x: e.clientX, y: e.clientY });
   }, []);
 
-  // 频道级计数（c: 前缀）只是群计数的明细，总数里排除避免双计
-  const totalUnread = Object.entries(unread).reduce((a, [k, v]) => (k.startsWith("c:") ? a : a + v), 0);
+  // 频道(c:)/线程(t:) 级计数只是群/agent 计数的明细，总数里排除避免双计
+  const totalUnread = Object.entries(unread).reduce((a, [k, v]) => (k.startsWith("c:") || k.startsWith("t:") ? a : a + v), 0);
   const onlineCount = friends.filter((f) => f.presence.kind !== "offline").length;
 
   const modalGroup = modal?.mode === "invite" ? groups.find((g) => g.id === modal.groupId) : null;
@@ -802,6 +989,8 @@ export function SocialLayer({
         unread={unread}
         markers={markers}
         channelSel={channelSel}
+        agentThreads={agentThreads}
+        threadSel={threadSel}
         mutedGroups={mutedGroups}
         mutedChannels={mutedChannels}
         typing={typing}
@@ -814,6 +1003,10 @@ export function SocialLayer({
         onSend={sendChat}
         onLoadOlder={loadOlder}
         onSelectChannel={selectChannel}
+        onSelectThread={selectThread}
+        onNewThread={newThread}
+        onRenameThread={renameThread}
+        onDeleteThread={deleteThread}
         onInvite={(groupId, preselect) => setModal(groupId ? { mode: "invite", groupId } : { mode: "create", preselect })}
         onToggleMute={toggleMute}
         onToggleMuteChannel={toggleMuteChannel}

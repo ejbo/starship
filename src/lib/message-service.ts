@@ -189,12 +189,27 @@ export async function getUnreadCounts(): Promise<Record<string, number>> {
   });
   if (groups.length === 0) return {};
   const humanIds = [...new Set(groups.filter((g) => !g.threadId).map((g) => g.fromId))];
-  const users = humanIds.length > 0 ? await prisma.user.findMany({ where: { id: { in: humanIds } }, select: { id: true, handle: true } }) : [];
+  const threadIds = [...new Set(groups.filter((g) => g.threadId).map((g) => g.threadId!))];
+  const [users, threads] = await Promise.all([
+    humanIds.length > 0 ? prisma.user.findMany({ where: { id: { in: humanIds } }, select: { id: true, handle: true } }) : [],
+    threadIds.length > 0 ? prisma.agentThread.findMany({ where: { id: { in: threadIds } }, select: { id: true, agentId: true } }) : [],
+  ]);
   const handleById = new Map(users.map((u) => [u.id, u.handle]));
+  const agentIds = [...new Set(threads.map((t) => t.agentId))];
+  const agents = agentIds.length > 0 ? await prisma.user.findMany({ where: { id: { in: agentIds } }, select: { id: true, handle: true } }) : [];
+  const handleByAgentId = new Map(agents.map((a) => [a.id, a.handle]));
+  const agentHandleByThread = new Map(threads.map((t) => [t.id, handleByAgentId.get(t.agentId)]));
   const counts: Record<string, number> = {};
   for (const g of groups) {
-    const key = g.threadId ? `t:${g.threadId}` : handleById.get(g.fromId);
-    if (key) counts[key] = (counts[key] ?? 0) + g._count.id;
+    if (g.threadId) {
+      // agent 多会话：线程明细键 "t:<id>" + agent tab 聚合键（handle），与客户端 markUnread 一致
+      counts[`t:${g.threadId}`] = (counts[`t:${g.threadId}`] ?? 0) + g._count.id;
+      const h = agentHandleByThread.get(g.threadId);
+      if (h) counts[h] = (counts[h] ?? 0) + g._count.id;
+    } else {
+      const key = handleById.get(g.fromId);
+      if (key) counts[key] = (counts[key] ?? 0) + g._count.id;
+    }
   }
   return counts;
 }
