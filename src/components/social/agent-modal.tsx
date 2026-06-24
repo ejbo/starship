@@ -334,10 +334,11 @@ function AgentFilesModal({ handle, name, syncOn, agentKind, onClose }: { handle:
 }
 
 /** 折叠的高级设置（上下文/唤醒/限速/本地权限） */
-export function AdvancedSettings({ settings, isLocal, onChange, showAll = false, defaultOpen = false }: { settings: AgentSettings; isLocal: boolean; onChange: (patch: Partial<AgentSettings>) => void; showAll?: boolean; defaultOpen?: boolean }) {
+export function AdvancedSettings({ settings, isLocal, onChange, showAll = false, defaultOpen = false, agentKind }: { settings: AgentSettings; isLocal: boolean; onChange: (patch: Partial<AgentSettings>) => void; showAll?: boolean; defaultOpen?: boolean; agentKind?: string }) {
   const [open, setOpen] = useState(defaultOpen);
   const showHosted = showAll || !isLocal;
   const showLocal = showAll || isLocal;
+  const showClaude = showAll || agentKind === "local-claude";
   return (
     <div className="rounded-lg border border-line">
       <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-1.5 px-3 py-2 text-xs font-medium text-dim transition-colors hover:text-ink">
@@ -391,6 +392,14 @@ export function AdvancedSettings({ settings, isLocal, onChange, showAll = false,
               {showAll && <div className="px-1 pt-1.5 text-[11px] font-medium text-mute">本地 agent 生效</div>}
               <Toggle label="默认放开全部工具（--full-auto）" checked={settings.fullAuto} onChange={(v) => onChange({ fullAuto: v })} />
               <Toggle label="独立配置沙箱（--isolate）" checked={settings.isolate} onChange={(v) => onChange({ isolate: v })} />
+              {showClaude && (
+                <Toggle
+                  label={`用 Claude 会员订阅登录${showAll ? "（仅本地 Claude）" : ""}`}
+                  hint="忽略 ANTHROPIC_API_KEY，避免误走 API 计费报 balance too low"
+                  checked={settings.claudeUseSubscription}
+                  onChange={(v) => onChange({ claudeUseSubscription: v })}
+                />
+              )}
               <Toggle label="同步工作目录文件到平台" hint="开启后可在网页查看/编辑 TA 的人设与记忆文件，编辑会写回本机" checked={settings.syncFiles} onChange={(v) => onChange({ syncFiles: v })} />
             </>
           )}
@@ -400,7 +409,7 @@ export function AdvancedSettings({ settings, isLocal, onChange, showAll = false,
   );
 }
 
-function Shell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Shell({ title, onClose, children, headerAction }: { title: string; onClose: () => void; children: React.ReactNode; headerAction?: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/30 p-4" onClick={onClose}>
       <div
@@ -410,9 +419,12 @@ function Shell({ title, onClose, children }: { title: string; onClose: () => voi
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
           <Bot className="size-4 text-accent" />
           <p className="text-sm font-semibold">{title}</p>
-          <button onClick={onClose} className="ml-auto rounded-lg p-1.5 text-dim transition-colors hover:bg-card-hi hover:text-ink" aria-label="关闭">
-            <X className="size-4" />
-          </button>
+          <div className="ml-auto flex items-center gap-1">
+            {headerAction}
+            <button onClick={onClose} className="rounded-lg p-1.5 text-dim transition-colors hover:bg-card-hi hover:text-ink" aria-label="关闭">
+              <X className="size-4" />
+            </button>
+          </div>
         </div>
         <div className="grow overflow-y-auto p-4">{children}</div>
       </div>
@@ -446,15 +458,44 @@ function Code({ children }: { children: React.ReactNode }) {
   return <code className="rounded bg-page px-1 py-0.5 font-mono text-[10.5px] text-ink">{children}</code>;
 }
 
-/** 连接命令展示：默认只给「下载 + 后台常驻」两行；前台/重启/说明收进折叠。本地 agent 创建后、右键取命令时复用。 */
+type Os = "mac" | "win";
+const OS_TABS: [Os, string][] = [["mac", "macOS / Linux"], ["win", "Windows"]];
+
+/** macOS·Linux / Windows 两套命令的切换条（连接命令、环境准备复用） */
+function OsToggle({ os, onChange }: { os: Os; onChange: (os: Os) => void }) {
+  return (
+    <div className="inline-flex shrink-0 rounded-lg border border-line p-0.5">
+      {OS_TABS.map(([v, label]) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onChange(v)}
+          className={cn(
+            "rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors",
+            os === v ? "bg-accent text-white" : "text-dim hover:text-ink",
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** 连接命令展示：顶部切 macOS·Linux / Windows；默认只给「下载 + 后台常驻」两行；前台/重启/说明收进折叠。本地 agent 创建后、右键取命令时复用。 */
 export function ConnectorCommandView({ command }: { command: ConnectorCommand }) {
   const [more, setMore] = useState(false);
+  const [os, setOs] = useState<Os>("mac");
+  const c = os === "win" ? command.win : command.mac;
   return (
     <div className="space-y-2">
-      <p className="text-[11px] text-dim">在装好对应 CLI 的电脑上，依次粘贴运行这两行（令牌、目录已填好，任意目录都能跑）：</p>
-      <CopyLine text={command.download} />
-      <CopyLine text={command.daemon} />
-      <p className="text-[11px] text-mute">配好后该 Agent 长期在线——关终端、重启电脑、崩溃都会自动恢复。</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="min-w-0 text-[11px] text-dim">在装好 Node 与对应 CLI 的电脑上，依次粘贴这两行{os === "win" ? "（PowerShell）" : ""}：</p>
+        <OsToggle os={os} onChange={setOs} />
+      </div>
+      <CopyLine text={c.download} />
+      <CopyLine text={c.daemon} />
+      <p className="text-[11px] text-mute">没装好环境？点右上角「环境准备」。配好后该 Agent 长期在线——关终端、重启电脑、崩溃都会自动恢复。</p>
 
       <button
         onClick={() => setMore((m) => !m)}
@@ -466,8 +507,8 @@ export function ConnectorCommandView({ command }: { command: ConnectorCommand })
       {more && (
         <div className="space-y-2 rounded-lg border border-line p-2.5 text-[11px] leading-relaxed text-dim">
           <p className="text-ink">前台运行（关终端即离线，调试用）：</p>
-          <CopyLine text={command.foreground} />
-          <p>重启 <Code>{command.restartDaemon}</Code> · 停止 <Code>{command.stopDaemon}</Code> · 开机自启 <Code>{command.bootPersist}</Code></p>
+          <CopyLine text={c.foreground} />
+          <p>重启 <Code>{c.restartDaemon}</Code> · 停止 <Code>{c.stopDaemon}</Code> · 开机自启 <Code>{c.bootPersist}</Code></p>
           <p>离线期间消息会排队、上线即处理；命令带固定 <Code>--dir</Code>，换目录会另起一套记忆。</p>
           <p>培养：人设/记忆在工作目录的上下文文件与 <Code>memory/</Code> 子目录，可手动编辑。</p>
         </div>
@@ -476,11 +517,118 @@ export function ConnectorCommandView({ command }: { command: ConnectorCommand })
   );
 }
 
-export function ConnectorCommandModal({ command, title, onClose }: { command: ConnectorCommand; title?: string; onClose: () => void }) {
+/** 各本地后端：安装 + 登录命令（mac/win 通用 npm 包；登录说明含订阅/计费提醒）。命令经研究核验（2026）。 */
+const CLI_ENV: Record<string, { name: string; install: string; login: string; note?: string }> = {
+  "local-claude": {
+    name: "Claude Code",
+    install: "npm install -g @anthropic-ai/claude-code",
+    login: "运行 claude，输入 /login，选「Claude 订阅账号（Pro/Max）」完成浏览器登录。",
+    note: "想用会员订阅：本机不要设置 ANTHROPIC_API_KEY（否则 Claude 会改走 API 计费，对话报 “balance too low”）。本地 Claude Agent 默认已开「用 Claude 会员订阅登录」，连接器会自动忽略该变量。",
+  },
+  "local-codex": {
+    name: "OpenAI Codex",
+    install: "npm install -g @openai/codex",
+    login: "运行 codex，选「Sign in with ChatGPT」登录（或用 API key）。",
+    note: "需 Node 22+；注意是带 @ 前缀的 @openai/codex（无前缀的 codex 是别的包）。",
+  },
+  "local-gemini": {
+    name: "Google Gemini CLI",
+    install: "npm install -g @google/gemini-cli",
+    login: "运行 gemini，首次选「Login with Google」登录（或设 GEMINI_API_KEY）。",
+  },
+  "local-qwen": {
+    name: "通义 Qwen Code",
+    install: "npm install -g @qwen-code/qwen-code",
+    login: "运行 qwen，输入 /auth 配置登录。",
+    note: "免费 OAuth 额度已于 2026-04 停用，现需 API key / 付费计划（DashScope、OpenRouter 或自带模型）。",
+  },
+};
+const NODE_INSTALL: Record<Os, string> = { mac: "brew install node", win: "winget install -e --id OpenJS.NodeJS.LTS" };
+const PM2_INSTALL: Record<Os, string> = { mac: "npm install -g pm2", win: "npm install -g pm2 pm2-windows-startup" };
+
+function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
-    <Shell title={title ?? "连接 / 重启命令"} onClose={onClose}>
-      <ConnectorCommandView command={command} />
+    <div className="space-y-1.5">
+      <p className="flex items-center gap-2 text-[13px] font-medium text-ink">
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-accent/10 text-[11px] font-semibold text-accent">{n}</span>
+        {title}
+      </p>
+      <div className="space-y-1.5 pl-7">{children}</div>
+    </div>
+  );
+}
+
+/** 环境准备：本机要装什么（Node / 对应 CLI / pm2），按 macOS·Linux / Windows 切换，复制即用 */
+export function EnvSetupModal({ kind, onClose }: { kind: string; onClose: () => void }) {
+  const [os, setOs] = useState<Os>("mac");
+  const cli = CLI_ENV[kind];
+  return (
+    <Shell title="环境准备" onClose={onClose}>
+      {!cli ? (
+        <p className="rounded-lg border border-line bg-page p-3 text-[13px] leading-relaxed text-dim">
+          <b className="text-ink">平台托管 Agent</b> 由平台 Gateway 出字，本机<b className="text-ink">无需安装任何东西</b>，直接创建即可。
+          <br />
+          只有「本地 Claude / Codex / Gemini / Qwen」形态才需要在自己电脑上准备环境。
+        </p>
+      ) : (
+        <div className="space-y-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="min-w-0 text-[12px] text-dim">在要托管 TA 的电脑上，按顺序粘贴运行{os === "win" ? "（PowerShell）" : ""}：</p>
+            <OsToggle os={os} onChange={setOs} />
+          </div>
+
+          <Step n={1} title="安装 Node.js（≥18，连接器与 CLI 都要用）">
+            <CopyLine text={NODE_INSTALL[os]} />
+            {os === "win" ? (
+              <p className="text-[11px] text-mute">装完关掉再重开一个 PowerShell 窗口，PATH 才生效。没有 winget 可去 nodejs.org 下安装包。</p>
+            ) : (
+              <p className="text-[11px] text-mute">没装 Homebrew 先装（brew.sh）；也可用 nvm 或 nodejs.org 官方安装包。</p>
+            )}
+          </Step>
+
+          <Step n={2} title={`安装并登录 ${cli.name}`}>
+            <CopyLine text={cli.install} />
+            <p className="text-[11px] text-dim">{cli.login}</p>
+            {cli.note && <p className="rounded-md border border-line bg-page px-2 py-1.5 text-[11px] leading-relaxed text-mute">{cli.note}</p>}
+          </Step>
+
+          <Step n={3} title="让 Agent 常驻后台（pm2）">
+            <CopyLine text={PM2_INSTALL[os]} />
+            <p className="text-[11px] text-mute">
+              连接命令里已包含这步，这里单列方便排查。
+              {os === "win" && " Windows 开机自启：再跑 pm2-startup install（pm2 自带的 pm2 startup 在 Windows 无效）。"}
+            </p>
+          </Step>
+
+          <p className="text-[11px] text-mute">装好后回到创建界面，创建 Agent 即可拿到一键连接命令。</p>
+        </div>
+      )}
     </Shell>
+  );
+}
+
+/** 弹窗右上角「环境准备」按钮（连接/创建/取命令弹窗复用） */
+function EnvSetupHeaderButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[11px] text-dim transition-colors hover:border-accent/50 hover:text-accent"
+      title="本机需要安装什么"
+    >
+      <Terminal className="size-3.5" /> 环境准备
+    </button>
+  );
+}
+
+export function ConnectorCommandModal({ command, title, onClose }: { command: ConnectorCommand; title?: string; onClose: () => void }) {
+  const [envOpen, setEnvOpen] = useState(false);
+  return (
+    <>
+      <Shell title={title ?? "连接 / 重启命令"} onClose={onClose} headerAction={<EnvSetupHeaderButton onClick={() => setEnvOpen(true)} />}>
+        <ConnectorCommandView command={command} />
+      </Shell>
+      {envOpen && <EnvSetupModal kind={command.agentKind} onClose={() => setEnvOpen(false)} />}
+    </>
   );
 }
 
@@ -543,6 +691,7 @@ export function AgentModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ handle: string; name: string; command?: ConnectorCommand } | null>(null);
+  const [envOpen, setEnvOpen] = useState(false);
   const isHosted = kind === "hosted";
   const patchSettings = (p: Partial<AgentSettings>) => setSettings((s) => ({ ...s, ...p }));
 
@@ -574,30 +723,38 @@ export function AgentModal({
 
   if (done) {
     return (
-      <Shell title={`「${done.name}」已创建`} onClose={onClose}>
-        <div className="space-y-3">
-          {done.command ? (
-            <ConnectorCommandView command={done.command} />
-          ) : (
-            <p className="text-sm text-dim">托管 Agent 已就绪、随时在线，直接发消息即可。</p>
-          )}
-          <p className="px-0.5 text-[11px] text-mute">私聊每条必回；群里 @{done.name} 才唤醒。可邀 TA 进群与其他成员协作。</p>
-          <button
-            onClick={() => {
-              onOpenChat(done.handle);
-              onClose();
-            }}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent py-2 text-sm font-medium text-white transition-colors hover:bg-accent-deep"
-          >
-            <MessageSquare className="size-4" /> 发消息试试
-          </button>
-        </div>
-      </Shell>
+      <>
+        <Shell
+          title={`「${done.name}」已创建`}
+          onClose={onClose}
+          headerAction={done.command ? <EnvSetupHeaderButton onClick={() => setEnvOpen(true)} /> : undefined}
+        >
+          <div className="space-y-3">
+            {done.command ? (
+              <ConnectorCommandView command={done.command} />
+            ) : (
+              <p className="text-sm text-dim">托管 Agent 已就绪、随时在线，直接发消息即可。</p>
+            )}
+            <p className="px-0.5 text-[11px] text-mute">私聊每条必回；群里 @{done.name} 才唤醒。可邀 TA 进群与其他成员协作。</p>
+            <button
+              onClick={() => {
+                onOpenChat(done.handle);
+                onClose();
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent py-2 text-sm font-medium text-white transition-colors hover:bg-accent-deep"
+            >
+              <MessageSquare className="size-4" /> 发消息试试
+            </button>
+          </div>
+        </Shell>
+        {envOpen && done.command && <EnvSetupModal kind={done.command.agentKind} onClose={() => setEnvOpen(false)} />}
+      </>
     );
   }
 
   return (
-    <Shell title="添加 AI Agent" onClose={onClose}>
+    <>
+    <Shell title="添加 AI Agent" onClose={onClose} headerAction={<EnvSetupHeaderButton onClick={() => setEnvOpen(true)} />}>
       <div className="space-y-3.5">
         <label className="block space-y-1">
           <span className="text-xs text-dim">名字</span>
@@ -659,7 +816,7 @@ export function AgentModal({
           />
         </label>
 
-        <AdvancedSettings settings={settings} isLocal={!isHosted} onChange={patchSettings} />
+        <AdvancedSettings settings={settings} isLocal={!isHosted} agentKind={kind} onChange={patchSettings} />
 
         {error && <p className="text-xs text-danger">{error}</p>}
         <button
@@ -671,6 +828,8 @@ export function AgentModal({
         </button>
       </div>
     </Shell>
+    {envOpen && <EnvSetupModal kind={kind} onClose={() => setEnvOpen(false)} />}
+    </>
   );
 }
 
@@ -774,7 +933,7 @@ export function AgentSettingsModal({ handle, onClose, onSaved }: { handle: strin
               </button>
             </div>
 
-            <AdvancedSettings settings={settings} isLocal={!isHosted} onChange={patchSettings} />
+            <AdvancedSettings settings={settings} isLocal={!isHosted} agentKind={agentKind} onChange={patchSettings} />
 
             {!isHosted && (
               <button

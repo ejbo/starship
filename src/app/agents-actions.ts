@@ -73,24 +73,30 @@ async function origin(): Promise<string> {
   return `${proto}://${host}`;
 }
 
-/** 一个 agent 的全套连接命令（启动/重启/停止，前台与后台两种）。命令均带 --dir 固定工作目录，与 cwd 无关。 */
-export interface ConnectorCommand {
-  handle: string;
-  /** local-claude | local-codex */
-  agentKind: string;
-  /** 下载连接器到固定路径（~ 由 shell 展开，与 cwd 无关） */
+/** 单个操作系统下的一套连接命令（启动/重启/停止）。命令均带 --dir 固定工作目录，与 cwd 无关。 */
+export interface OsConnectorCommands {
+  /** 下载连接器到用户主目录的固定路径 */
   download: string;
-  /** 前台运行（关终端即离线） */
+  /** 前台运行（关终端即离线，调试用） */
   foreground: string;
   /** 后台常驻（pm2，关终端/重启电脑都不掉线），多行 */
   daemon: string;
-  /** 前台重启（同 foreground，再跑一次） */
-  restartForeground: string;
   /** 后台重启 / 停止（pm2） */
   restartDaemon: string;
   stopDaemon: string;
   /** 开机自启（一次性） */
   bootPersist: string;
+}
+
+/** 一个 agent 的全套连接命令，按操作系统分两套（macOS/Linux 与 Windows PowerShell）。 */
+export interface ConnectorCommand {
+  handle: string;
+  /** local-claude | local-codex | local-gemini | local-qwen */
+  agentKind: string;
+  /** macOS / Linux（bash/zsh） */
+  mac: OsConnectorCommands;
+  /** Windows（PowerShell） */
+  win: OsConnectorCommands;
 }
 
 /** agentKind → 连接器 --backend 标志（local-claude 为默认，无需标志） */
@@ -101,26 +107,58 @@ function backendFlag(agentKind: string): string {
   return "";
 }
 
-function commandsFor(token: string, agentKind: string, base: string, handle: string, settings?: AgentSettings): ConnectorCommand {
-  const flags =
+/** 与 cwd 无关的连接器开关（两套命令共用） */
+function connectorFlags(agentKind: string, settings?: AgentSettings): string {
+  return (
     backendFlag(agentKind) +
     (settings?.fullAuto ? " --full-auto" : "") +
     (settings?.isolate ? " --isolate" : "") +
-    (settings?.model ? ` --model ${settings.model}` : "");
-  const dir = `~/starport-agents/${handle}`;
+    // 本地 Claude 默认优先会员订阅登录（剥离 ANTHROPIC_API_KEY，避免误走 API 计费）；显式关掉才用 API
+    (agentKind === "local-claude" && settings?.claudeUseSubscription !== false ? " --claude-subscription" : "") +
+    (settings?.model ? ` --model ${settings.model}` : "")
+  );
+}
+
+/** macOS / Linux 一套（bash/zsh，~ 由 shell 展开） */
+function macCommands(token: string, base: string, handle: string, flags: string): OsConnectorCommands {
   const script = "~/starport-agent.mjs";
+  const dir = `~/starport-agents/${handle}`;
   const pm = `agent-${handle}`;
   const args = `--url ${base} --token ${token} --dir ${dir}${flags}`;
   return {
-    handle,
-    agentKind,
     download: `curl -fsSL ${base}/api/agent-connector -o ${script}`,
     foreground: `node ${script} ${args}`,
     daemon: [`npm i -g pm2`, `pm2 start node --name ${pm} -- ${script} ${args}`, `pm2 save`].join("\n"),
-    restartForeground: `node ${script} ${args}`,
     restartDaemon: `pm2 restart ${pm}`,
     stopDaemon: `pm2 stop ${pm}`,
     bootPersist: `pm2 startup`,
+  };
+}
+
+/** Windows 一套（PowerShell，$HOME 展开；curl.exe 避开 PowerShell 的 curl 别名；npm 全局 bin 是 .cmd） */
+function winCommands(token: string, base: string, handle: string, flags: string): OsConnectorCommands {
+  const script = `"$HOME\\starport-agent.mjs"`;
+  const dir = `"$HOME\\starport-agents\\${handle}"`;
+  const pm = `agent-${handle}`;
+  const args = `--url ${base} --token ${token} --dir ${dir}${flags}`;
+  return {
+    download: `curl.exe -fsSL ${base}/api/agent-connector -o "$HOME\\starport-agent.mjs"`,
+    foreground: `node ${script} ${args}`,
+    daemon: [`npm i -g pm2`, `pm2 start node --name ${pm} -- ${script} ${args}`, `pm2 save`].join("\n"),
+    restartDaemon: `pm2 restart ${pm}`,
+    stopDaemon: `pm2 stop ${pm}`,
+    // pm2 startup 不支持 Windows，用 pm2-windows-startup 把 pm2 注册成开机自启
+    bootPersist: `npm i -g pm2-windows-startup; pm2-startup install`,
+  };
+}
+
+function commandsFor(token: string, agentKind: string, base: string, handle: string, settings?: AgentSettings): ConnectorCommand {
+  const flags = connectorFlags(agentKind, settings);
+  return {
+    handle,
+    agentKind,
+    mac: macCommands(token, base, handle, flags),
+    win: winCommands(token, base, handle, flags),
   };
 }
 

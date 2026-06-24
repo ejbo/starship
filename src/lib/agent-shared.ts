@@ -39,6 +39,8 @@ export interface AgentSettings {
   fullAuto: boolean;
   /** 本地：生成命令默认带 --isolate（独立 config/登录沙箱） */
   isolate: boolean;
+  /** 本地 Claude：优先用会员订阅登录——连接器剥离 ANTHROPIC_API_KEY/AUTH_TOKEN，避免误走 API 计费（balance too low）。默认开。 */
+  claudeUseSubscription: boolean;
   /** 回复长度偏好：auto（不限定）| short | normal | detailed */
   replyLength: string;
   /** 回复语言偏好：空=跟随对方语言 */
@@ -51,6 +53,17 @@ export interface AgentSettings {
   groupSlowmodeSec: number;
   /** 本地 agent：是否把工作目录文件同步到平台供网页查看/编辑（默认否，仅显示本地路径） */
   syncFiles: boolean;
+}
+
+/**
+ * 安全的 model 标识：只允许字母数字与 . _ : / -（无空格、无 shell 元字符）。
+ * model 会被拼进用户复制的连接命令，且 Windows 上连接器经 shell 启动 CLI（claude.cmd 等），
+ * 含空格/元字符的 model 会破坏参数解析甚至在本机注入命令，故在此统一收口。
+ */
+export const SAFE_MODEL_RE = /^[A-Za-z0-9._:\/-]+$/;
+export function normalizeModel(raw: unknown): string | null {
+  const m = typeof raw === "string" ? raw.trim().slice(0, 80) : "";
+  return m && SAFE_MODEL_RE.test(m) ? m : null;
 }
 
 export const REPLY_LENGTHS = ["auto", "short", "normal", "detailed"] as const;
@@ -111,6 +124,7 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   groupProactive: false,
   fullAuto: false,
   isolate: false,
+  claudeUseSubscription: true,
   replyLength: "auto",
   replyLanguage: "",
   replyMarkdown: null,

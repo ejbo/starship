@@ -12,7 +12,12 @@
  *   --full-auto              放开全部工具权限（claude: --dangerously-skip-permissions）
  *   --isolate                每个 agent 独立 config 沙箱（全局设置/记忆/登录都隔离，
  *                            首次会从默认目录带过登录态；keychain 登录或缺凭据时按提示登录一次）
+ *   --claude-subscription    仅 claude：剥离 ANTHROPIC_API_KEY/AUTH_TOKEN，强制用 `claude login`
+ *                            的会员订阅登录，避免误走 API 计费（报 balance too low）
  *   --model <model>          透传给后端 CLI
+ *
+ * Windows：在 PowerShell 里跑（平台「Windows」标签给的命令）。连接器会用 shell 方式
+ * 启动 claude.cmd / codex.cmd 等 npm 全局 bin；需先装好 Node 与对应 CLI（见创建弹窗「环境准备」）。
  *
  * 会话记忆：每个会话（私聊/频道）映射一个本地 CLI session（--resume / exec resume），
  * 存在 <dir>/.starport-sessions.json；人设写入 <dir>/CLAUDE.md（可手动编辑培养）。
@@ -22,7 +27,9 @@
 import { spawn } from "node:child_process";
 import { copyFileSync, mkdirSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
+
+const IS_WIN = process.platform === "win32";
 
 // —— 参数 ——
 const args = process.argv.slice(2);
@@ -37,7 +44,12 @@ const TOKEN = opt("token");
 const BACKEND = opt("backend", "claude");
 const FULL_AUTO = has("full-auto");
 const ISOLATE = has("isolate"); // 每个 agent 独立 config/记忆/登录沙箱
-const MODEL = opt("model");
+const CLAUDE_SUBSCRIPTION = has("claude-subscription"); // claude：剥离 API key 环境变量，强制走会员订阅登录
+// 安全的 model 标识：只允许字母数字与 . _ : / -。model 会作为参数传给 CLI，且 Windows 上经 shell 启动，
+// 含空格/元字符会破坏参数解析甚至本机注入；平台侧已收口，这里再兜底一层（兼容手动 --model）。
+const SAFE_MODEL = /^[A-Za-z0-9._:\/-]+$/;
+const safeModel = (m) => (m && SAFE_MODEL.test(m) ? m : null);
+const MODEL = safeModel(opt("model"));
 // 实时模型：以平台 agent 设置为准（每次收件刷新），用户在网页切换模型即时生效；启动 --model 仅作初值
 let liveModel = MODEL || null;
 // 工作目录文件同步（owner 在网页开启后才上传/回写；默认关）
@@ -81,7 +93,7 @@ async function selfCleanAndExit(reason) {
     log(`移除常驻进程 → pm2 delete ${pmName}`);
     await new Promise((r) => {
       try {
-        const c = spawn("pm2", ["delete", pmName], { stdio: "ignore" });
+        const c = spawn("pm2", ["delete", pmName], { stdio: "ignore", shell: IS_WIN });
         c.on("close", r);
         c.on("error", r);
       } catch {
@@ -89,7 +101,7 @@ async function selfCleanAndExit(reason) {
       }
     });
   }
-  if (DIR) log(`如需清理该 Agent 的本地记忆/文件，手动执行：rm -rf ${DIR}`);
+  if (DIR) log(`如需清理该 Agent 的本地记忆/文件，手动执行：${IS_WIN ? `Remove-Item -Recurse -Force "${DIR}"` : `rm -rf ${DIR}`}`);
   process.exit(0);
 }
 
@@ -134,7 +146,7 @@ async function syncWorkdirFiles() {
     for (const p of res.pending ?? []) {
       try {
         const full = resolve(DIR, p.path);
-        if (full !== DIR && !full.startsWith(DIR + "/")) continue; // 仅允许写入工作目录内（防 ../ 穿越）
+        if (full !== DIR && !full.startsWith(DIR + sep)) continue; // 仅允许写入工作目录内（防 ../ 穿越；sep 兼容 Windows 反斜杠）
         mkdirSync(join(full, ".."), { recursive: true });
         writeFileSync(full, p.content ?? "");
         // ack 带版本：仅当库中版本仍是这一版时才清 pendingPush，防把写回后又被网页改过的新编辑误确认
@@ -165,7 +177,10 @@ const saveSessions = () => writeFileSync(sessionsFile, JSON.stringify(sessions, 
 // —— 后端执行 ——
 function run(cmd, argv, input, cwd) {
   return new Promise((resolveP, rejectP) => {
-    const child = spawn(cmd, argv, { cwd, env: childEnv, stdio: ["pipe", "pipe", "pipe"] });
+    // Windows：claude/codex/gemini/qwen 是 npm 全局生成的 .cmd 包装器，直接 spawn 会 ENOENT，
+    // 必须经 shell 解析（PATHEXT）。shell:true 下 Node 只空格拼接、不转义 argv，故所有外来值（尤其 model）
+    // 都已用 SAFE_MODEL 过滤掉空格/元字符；prompt 走 stdin，不进 argv。
+    const child = spawn(cmd, argv, { cwd, env: childEnv, stdio: ["pipe", "pipe", "pipe"], shell: IS_WIN });
     let out = "";
     let err = "";
     const timer = setTimeout(() => {
@@ -314,7 +329,7 @@ const main = async () => {
   }
   const agent = first.agent;
   // 平台设置的模型为准（覆盖启动 --model）
-  if (agent.model !== undefined) liveModel = agent.model || null;
+  if (agent.model !== undefined) liveModel = safeModel(agent.model);
   if (agent.syncFiles !== undefined) syncFilesOn = !!agent.syncFiles;
   DIR = resolve(DIR ?? join(process.cwd(), "starport-agents", agent.handle));
   mkdirSync(DIR, { recursive: true });
@@ -346,6 +361,28 @@ const main = async () => {
     }
   }
 
+  // —— Claude 会员订阅优先（--claude-subscription）——
+  // Claude Code 只要环境里有 ANTHROPIC_API_KEY/AUTH_TOKEN 就改走「API 计费」，订阅登录会被它顶掉，
+  // 表现为对话报 "Credit balance is too low"。剥离这两个变量后，claude 回落到 `claude login` 的会员订阅登录。
+  if (BACKEND === "claude" && CLAUDE_SUBSCRIPTION) {
+    const hadKey = childEnv.ANTHROPIC_API_KEY || childEnv.ANTHROPIC_AUTH_TOKEN;
+    childEnv = { ...childEnv }; // 复制后再删，避免改动 process.env
+    delete childEnv.ANTHROPIC_API_KEY;
+    delete childEnv.ANTHROPIC_AUTH_TOKEN;
+    if (hadKey) log("已忽略环境里的 ANTHROPIC_API_KEY/AUTH_TOKEN → 用 Claude 会员订阅登录");
+    // 检测是否真有订阅登录态：CLAUDE_CODE_OAUTH_TOKEN 或配置目录的 .credentials.json。
+    // macOS 凭据常在 Keychain（无该文件），故只在非 macOS 上据文件缺失提示，避免误报。
+    const cfgDir = childEnv.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
+    const hasSubCred = !!childEnv.CLAUDE_CODE_OAUTH_TOKEN || existsSync(join(cfgDir, ".credentials.json"));
+    if (!hasSubCred && process.platform !== "darwin") {
+      log(`⚠ 未发现 Claude 订阅登录态（${join(cfgDir, ".credentials.json")} 不存在且无 CLAUDE_CODE_OAUTH_TOKEN）：请先在终端跑一次 \`claude\` 并 /login 选订阅账号，或 \`claude setup-token\` 后设 CLAUDE_CODE_OAUTH_TOKEN。想改回 API 计费可在网页关掉「用 Claude 会员订阅登录」。`);
+    } else {
+      log(`Claude 会员订阅模式：用 \`claude login\` 的订阅登录${hadKey ? "" : "（未检测到 API key）"}`);
+    }
+  } else if (BACKEND === "claude" && (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN)) {
+    log("⚠ 检测到 ANTHROPIC_API_KEY/AUTH_TOKEN：Claude 将走 API 计费（可能报 balance too low）。想用会员订阅，请在网页开「用 Claude 会员订阅登录」并重新下载连接器脚本后重启。");
+  }
+
   // 人设落地为后端的上下文文件（已存在则不覆盖——这是 agent 的「培养」文件，手动编辑生效）
   const contextFile = BACKEND === "gemini" ? "GEMINI.md" : BACKEND === "qwen" ? "QWEN.md" : "CLAUDE.md";
   const personaMd = join(DIR, contextFile);
@@ -367,7 +404,7 @@ const main = async () => {
     log(`已写入人设 → ${personaMd}`);
   }
 
-  log(`✓ 已连接：${agent.name}（@${agent.handle}） · 后端 ${BACKEND} · 工作目录 ${DIR}${ISOLATE ? " · 独立沙箱" : ""}`);
+  log(`✓ 已连接：${agent.name}（@${agent.handle}） · 后端 ${BACKEND} · 工作目录 ${DIR}${ISOLATE ? " · 独立沙箱" : ""}${BACKEND === "claude" && CLAUDE_SUBSCRIPTION ? " · 会员订阅" : ""}`);
   log(FULL_AUTO ? "⚠ full-auto：全部工具自动批准" : "权限模式：acceptEdits（要全自动加 --full-auto）");
 
   const exec = BACKEND === "codex" ? runCodex : BACKEND === "gemini" ? runGemini : BACKEND === "qwen" ? runQwen : runClaude;
@@ -403,7 +440,7 @@ const main = async () => {
       const res = await api("/api/v1/agent/inbox?wait=20");
       // 实时同步模型：用户在网页切换/清空后，下次收件即生效（每个任务用新 model 起 CLI）
       if (res.agent && res.agent.model !== undefined) {
-        const next = res.agent.model || null;
+        const next = safeModel(res.agent.model);
         if (next !== liveModel) {
           liveModel = next;
           log(`模型已切换为 ${liveModel || "(CLI 默认)"}`);

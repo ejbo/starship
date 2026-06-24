@@ -5,7 +5,7 @@ import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { GatewayError, runGatewayChat } from "@/lib/gateway-core";
 import { getSessionUserId } from "@/lib/session";
-import { DEFAULT_AGENT_SETTINGS, HOSTED_PROVIDERS, pickActivityPhrase, type AgentSettings } from "@/lib/agent-shared";
+import { DEFAULT_AGENT_SETTINGS, HOSTED_PROVIDERS, normalizeModel, pickActivityPhrase, type AgentSettings } from "@/lib/agent-shared";
 
 export { HOSTED_PROVIDERS, type AgentSettings };
 
@@ -33,7 +33,7 @@ export function getAgentSettings(raw: unknown): AgentSettings {
   const s = (raw && typeof raw === "object" ? raw : {}) as Partial<AgentSettings>;
   return {
     provider: typeof s.provider === "string" && (HOSTED_PROVIDERS as readonly string[]).includes(s.provider) ? s.provider : d.provider,
-    model: typeof s.model === "string" && s.model.trim() ? s.model.trim().slice(0, 80) : null,
+    model: normalizeModel(s.model), // 收口：去空格/限长 + 拒绝含 shell 元字符的 model（防连接命令/Windows shell 启动被破坏或注入）
     contextMsgs: clampInt(s.contextMsgs, 5, 100, d.contextMsgs),
     maxHops: clampInt(s.maxHops, 0, 20, d.maxHops),
     rateLimit: clampInt(s.rateLimit, 1, 120, d.rateLimit),
@@ -42,6 +42,7 @@ export function getAgentSettings(raw: unknown): AgentSettings {
     groupProactive: typeof s.groupProactive === "boolean" ? s.groupProactive : d.groupProactive,
     fullAuto: typeof s.fullAuto === "boolean" ? s.fullAuto : d.fullAuto,
     isolate: typeof s.isolate === "boolean" ? s.isolate : d.isolate,
+    claudeUseSubscription: typeof s.claudeUseSubscription === "boolean" ? s.claudeUseSubscription : d.claudeUseSubscription,
     replyLength: typeof s.replyLength === "string" && ["auto", "short", "normal", "detailed"].includes(s.replyLength) ? s.replyLength : d.replyLength,
     replyLanguage: typeof s.replyLanguage === "string" ? s.replyLanguage.trim().slice(0, 20) : d.replyLanguage,
     replyMarkdown: typeof s.replyMarkdown === "boolean" ? s.replyMarkdown : d.replyMarkdown,
