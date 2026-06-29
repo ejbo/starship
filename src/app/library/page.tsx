@@ -20,6 +20,7 @@ export default async function LibraryPage() {
     lastUsedAt: i.lastUsedAt ?? null,
     acquiredAt: i.acquiredAt,
     hasEntry: Boolean(i.product.entry),
+    launchMode: i.product.entry?.launchMode === "newtab" ? "newtab" : "embedded",
   }));
 
   return (

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Clock, Play, Search } from "lucide-react";
 import { CapsuleArt } from "@/components/ui/capsule-art";
@@ -9,6 +10,7 @@ import { typeMeta } from "@/components/ui/type-badge";
 import { getProductIcon } from "@/lib/icons";
 import { cn } from "@/lib/cn";
 import { formatPlaytime, formatPlaytimeShort } from "@/lib/playtime";
+import { launchAppAction } from "@/app/p/[slug]/actions";
 import type { ProductArt, ProductType } from "@/lib/types";
 
 export interface LibItem {
@@ -22,10 +24,11 @@ export interface LibItem {
   lastUsedAt: string | null;
   acquiredAt: string;
   hasEntry: boolean;
+  launchMode: "newtab" | "embedded";
 }
 
-// 点击库里的应用 → 进入该应用的「库详情页」（Steam 式），而不是直接跳运行/商店页
-const launchHref = (i: LibItem) => `/library/${i.slug}`;
+// 详情页（信息/成就/版本）
+const detailHref = (i: LibItem) => `/library/${i.slug}`;
 
 type Sort = "recent" | "playtime" | "name";
 const sorts: { key: Sort; label: string }[] = [
@@ -38,6 +41,38 @@ export function LibraryView({ items }: { items: LibItem[] }) {
   const [query, setQuery] = useState("");
   const [activeType, setActiveType] = useState<ProductType | "all">("all");
   const [sort, setSort] = useState<Sort>("recent");
+  const [, startLaunch] = useTransition();
+  const [launching, setLaunching] = useState<string | null>(null);
+  const router = useRouter();
+
+  // 库里点「启动」= 直接启动，不再先进详情页。newtab 应用同步开空白页保住用户手势（绕弹窗拦截）→
+  // 回填带一次性登录码的入口地址；沙箱应用进 /run 容器；无入口的退回详情页。
+  const launch = (i: LibItem) => {
+    if (!i.hasEntry) {
+      router.push(detailHref(i));
+      return;
+    }
+    setLaunching(i.slug);
+    if (i.launchMode === "newtab") {
+      const w = window.open("", "_blank");
+      startLaunch(async () => {
+        const res = await launchAppAction(i.slug);
+        if (res.ok && res.url) {
+          if (w) w.location.href = res.url;
+          else window.location.href = res.url;
+        } else if (w) {
+          w.close();
+        }
+        setLaunching(null);
+      });
+    } else {
+      startLaunch(async () => {
+        await launchAppAction(i.slug); // 上报「正在使用」
+        router.push(`/run/${i.slug}`);
+        setLaunching(null);
+      });
+    }
+  };
 
   const typeCounts = useMemo(() => {
     const m = new Map<ProductType, number>();
@@ -113,9 +148,13 @@ export function LibraryView({ items }: { items: LibItem[] }) {
                 <p className="flex items-center gap-1.5 text-sm text-dim">
                   <Clock className="size-3.5" /> 累计 {formatPlaytime(hero.usageMinutes)} · 最近 {hero.lastUsedAt}
                 </p>
-                <Link href={launchHref(hero)} className="inline-flex w-fit items-center gap-1.5 rounded-md bg-accent px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-deep">
-                  <Play className="size-4 fill-white" /> {hero.hasEntry ? "启动" : "打开"}
-                </Link>
+                <button
+                  onClick={() => launch(hero)}
+                  disabled={launching === hero.slug}
+                  className="inline-flex w-fit items-center gap-1.5 rounded-md bg-accent px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-deep disabled:opacity-60"
+                >
+                  <Play className="size-4 fill-white" /> {launching === hero.slug ? "正在打开…" : hero.hasEntry ? "启动" : "打开"}
+                </button>
               </div>
             </div>
           </section>
@@ -126,13 +165,13 @@ export function LibraryView({ items }: { items: LibItem[] }) {
           <section>
             <div className="scrollbar-hide -mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
               {recentStrip.map((i) => (
-                <Link key={i.slug} href={launchHref(i)} className="capsule group w-40 shrink-0 overflow-hidden">
+                <button key={i.slug} onClick={() => launch(i)} className="capsule group w-40 shrink-0 overflow-hidden text-left">
                   <CapsuleArt art={i.art} ratio="wide" iconClassName="size-1/3" />
                   <div className="p-2">
                     <p className="truncate text-xs font-medium transition-colors group-hover:text-accent">{i.name}</p>
-                    <p className="text-[11px] text-mute">{formatPlaytimeShort(i.usageMinutes)}</p>
+                    <p className="text-[11px] text-mute">{launching === i.slug ? "打开中…" : formatPlaytimeShort(i.usageMinutes)}</p>
                   </div>
-                </Link>
+                </button>
               ))}
             </div>
           </section>
@@ -167,20 +206,20 @@ export function LibraryView({ items }: { items: LibItem[] }) {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, delay: Math.min(idx, 12) * 0.03, ease: "easeOut" }}
                 >
-                <Link href={launchHref(i)} className="capsule group block overflow-hidden">
-                  <div className="relative">
+                <div className="capsule group block overflow-hidden">
+                  <button onClick={() => launch(i)} className="relative block w-full" title={i.hasEntry ? "启动" : "打开"}>
                     <CapsuleArt art={i.art} ratio="tall" iconClassName="size-1/3" />
                     <span className="absolute inset-0 flex items-center justify-center bg-ink/40 opacity-0 backdrop-blur-[1px] transition-opacity group-hover:opacity-100">
                       <span className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white">
-                        <Play className="size-3.5 fill-white" /> {i.hasEntry ? "启动" : "打开"}
+                        <Play className="size-3.5 fill-white" /> {launching === i.slug ? "打开中…" : i.hasEntry ? "启动" : "打开"}
                       </span>
                     </span>
-                  </div>
-                  <div className="p-2.5">
+                  </button>
+                  <Link href={detailHref(i)} className="block p-2.5">
                     <p className="truncate text-sm font-medium transition-colors group-hover:text-accent">{i.name}</p>
                     <p className="mt-0.5 text-[11px] text-mute">{typeMeta[i.type].label} · {formatPlaytimeShort(i.usageMinutes)}</p>
-                  </div>
-                </Link>
+                  </Link>
+                </div>
                 </motion.div>
               ))}
             </div>
