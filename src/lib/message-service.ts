@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { getSessionUserId } from "@/lib/session";
 import type { MessageMutation, ReactionAgg, ReplyPreview } from "@/components/social/presence";
 
-export type MessageKind = "text" | "image" | "file" | "voice";
+export type MessageKind = "text" | "image" | "file" | "voice" | "app-invite";
 
 export interface ChatMessage {
   id: string;
@@ -37,7 +37,9 @@ export function toReplyPreview(r: { id: string; body: string; kind: string; dele
         ? "[文件]"
         : r.kind === "voice"
           ? "[语音]"
-          : r.body.slice(0, 60);
+          : r.kind === "app-invite"
+            ? "[游戏邀请]"
+            : r.body.slice(0, 60);
   return { id: r.id, senderName: r.from.name, excerpt, kind: r.kind as MessageKind };
 }
 

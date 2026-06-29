@@ -292,6 +292,38 @@ function EditBox({ initial, onCancel, onCommit }: { initial: string; onCancel: (
 
 // —— 消息正文（文本 linkify / 图片 / 文件 / 语音 / agent markdown） ——
 function MessageBody({ msg, onImage }: { msg: ViewMessage; onImage: (url: string) => void }) {
+  if (msg.kind === "app-invite") {
+    let d: { appName?: string; appIcon?: string; gameName?: string; hostName?: string; deepLink?: string } = {};
+    try {
+      d = JSON.parse(msg.body);
+    } catch {
+      /* ignore */
+    }
+    return (
+      <div className="mt-0.5 w-[15rem] overflow-hidden rounded-xl border border-line bg-card-hi">
+        <div className="flex items-center gap-2 px-3 pt-3">
+          {d.appIcon ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={d.appIcon} alt="" className="size-8 rounded-lg object-cover" />
+          ) : (
+            <span className="grid size-8 place-items-center rounded-lg bg-accent text-sm font-bold text-white">华</span>
+          )}
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold text-ink">{(d.appName ?? "华子") + " · " + (d.gameName ?? "游戏")}</div>
+            <div className="truncate text-xs text-mute">{(d.hostName ?? "好友") + " 邀你一起玩"}</div>
+          </div>
+        </div>
+        <a
+          href={d.deepLink ?? "#"}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 block bg-accent px-3 py-2 text-center text-sm font-semibold text-white transition hover:brightness-110"
+        >
+          加入游戏 →
+        </a>
+      </div>
+    );
+  }
   if (msg.kind === "voice" && msg.attachmentUrl) return <VoiceBubble url={msg.attachmentUrl} seconds={voiceDuration(msg.attachmentName)} transcript={msg.body} />;
   if (msg.kind === "image" && msg.attachmentUrl) {
     const url = msg.attachmentUrl;
