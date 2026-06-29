@@ -543,7 +543,14 @@ const CLI_ENV: Record<string, { name: string; install: string; login: string; no
     note: "免费 OAuth 额度已于 2026-04 停用，现需 API key / 付费计划（DashScope、OpenRouter 或自带模型）。",
   },
 };
-const NODE_INSTALL: Record<Os, string> = { mac: "brew install node", win: "winget install -e --id OpenJS.NodeJS.LTS" };
+const NODE_INSTALL: Record<Os, string> = {
+  mac: "brew install node",
+  // --source winget 直指 winget 源，跳过首次会卡 Y/N 的 msstore 协议提示；两个 accept 兜底全自动
+  win: "winget install -e --id OpenJS.NodeJS.LTS --source winget --accept-source-agreements --accept-package-agreements",
+};
+// Windows 客户端默认执行策略 Restricted：PowerShell 跑 npm.ps1 / claude.ps1 等会报「running scripts is disabled」。
+// CurrentUser 作用域放开到 RemoteSigned 不需要管理员，是后续 npm 安装/登录命令能跑通的前提。
+const PS_POLICY = "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force";
 const PM2_INSTALL: Record<Os, string> = { mac: "npm install -g pm2", win: "npm install -g pm2 pm2-windows-startup" };
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
@@ -577,26 +584,35 @@ export function EnvSetupModal({ kind, onClose }: { kind: string; onClose: () => 
             <OsToggle os={os} onChange={setOs} />
           </div>
 
-          <Step n={1} title="安装 Node.js（≥18，连接器与 CLI 都要用）">
+          {os === "win" && (
+            <Step n={1} title="放开 PowerShell 脚本执行策略（Windows 必做）">
+              <CopyLine text={PS_POLICY} />
+              <p className="text-[11px] text-mute">
+                Windows 默认禁止跑脚本，否则下面 <code className="rounded bg-page px-1">npm install</code> 会报「running scripts is disabled on this system」（npm/claude 等都是 .ps1）。公司统一管控的电脑若仍被拦，改用 <code className="rounded bg-page px-1">powershell -ExecutionPolicy Bypass</code> 开一个窗口，或把命令里的 <code className="rounded bg-page px-1">npm</code> 换成 <code className="rounded bg-page px-1">npm.cmd</code>。
+              </p>
+            </Step>
+          )}
+
+          <Step n={os === "win" ? 2 : 1} title="安装 Node.js（≥18，连接器与 CLI 都要用）">
             <CopyLine text={NODE_INSTALL[os]} />
             {os === "win" ? (
-              <p className="text-[11px] text-mute">装完关掉再重开一个 PowerShell 窗口，PATH 才生效。没有 winget 可去 nodejs.org 下安装包。</p>
+              <p className="text-[11px] text-mute">装完关掉再重开一个 PowerShell 窗口，PATH 才生效。没有 winget 可去 nodejs.org 下安装包。<b className="text-dim">Codex 需 Node 22+</b>。</p>
             ) : (
               <p className="text-[11px] text-mute">没装 Homebrew 先装（brew.sh）；也可用 nvm 或 nodejs.org 官方安装包。</p>
             )}
           </Step>
 
-          <Step n={2} title={`安装并登录 ${cli.name}`}>
+          <Step n={os === "win" ? 3 : 2} title={`安装并登录 ${cli.name}`}>
             <CopyLine text={cli.install} />
             <p className="text-[11px] text-dim">{cli.login}</p>
             {cli.note && <p className="rounded-md border border-line bg-page px-2 py-1.5 text-[11px] leading-relaxed text-mute">{cli.note}</p>}
           </Step>
 
-          <Step n={3} title="让 Agent 常驻后台（pm2）">
+          <Step n={os === "win" ? 4 : 3} title="让 Agent 常驻后台（pm2）">
             <CopyLine text={PM2_INSTALL[os]} />
             <p className="text-[11px] text-mute">
               连接命令里已包含这步，这里单列方便排查。
-              {os === "win" && " Windows 开机自启：再跑 pm2-startup install（pm2 自带的 pm2 startup 在 Windows 无效）。"}
+              {os === "win" && " Windows 开机自启：再跑 pm2 save; pm2-startup install（pm2 自带的 pm2 startup 在 Windows 无效）；重启并重新登录桌面后会自动恢复（无人登录的服务器不适用）。"}
             </p>
           </Step>
 

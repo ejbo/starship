@@ -128,7 +128,10 @@ function macCommands(token: string, base: string, handle: string, flags: string)
   return {
     download: `curl -fsSL ${base}/api/agent-connector -o ${script}`,
     foreground: `node ${script} ${args}`,
-    daemon: [`npm i -g pm2`, `pm2 start node --name ${pm} -- ${script} ${args}`, `pm2 save`].join("\n"),
+    // pm2 start <脚本> --interpreter node：让 pm2 用 node 跑这个 .mjs。别用 `pm2 start node -- 脚本`——
+    // 那样 pm2 会把字面量 "node" 当成脚本路径去找（Unix 上恰好能从 PATH 找到 node 而侥幸可用，Windows 上
+    // 不做 .exe 解析直接报 "Script not found: …\\node"，连接器根本起不来）。
+    daemon: [`npm i -g pm2`, `pm2 start ${script} --name ${pm} --interpreter node -- ${args}`, `pm2 save`].join("\n"),
     restartDaemon: `pm2 restart ${pm}`,
     stopDaemon: `pm2 stop ${pm}`,
     bootPersist: `pm2 startup`,
@@ -144,11 +147,13 @@ function winCommands(token: string, base: string, handle: string, flags: string)
   return {
     download: `curl.exe -fsSL ${base}/api/agent-connector -o "$HOME\\starport-agent.mjs"`,
     foreground: `node ${script} ${args}`,
-    daemon: [`npm i -g pm2`, `pm2 start node --name ${pm} -- ${script} ${args}`, `pm2 save`].join("\n"),
+    // 同 mac：必须 `pm2 start <脚本> --interpreter node`，不能 `pm2 start node -- <脚本>`
+    // （后者在 Windows 上 pm2 把 "node" 当脚本找、不解析 .exe → "Script not found: …\\node"，常驻起不来）。
+    daemon: [`npm i -g pm2`, `pm2 start ${script} --name ${pm} --interpreter node -- ${args}`, `pm2 save`].join("\n"),
     restartDaemon: `pm2 restart ${pm}`,
     stopDaemon: `pm2 stop ${pm}`,
-    // pm2 startup 不支持 Windows，用 pm2-windows-startup 把 pm2 注册成开机自启
-    bootPersist: `npm i -g pm2-windows-startup; pm2-startup install`,
+    // pm2 startup 不支持 Windows，用 pm2-windows-startup 注册开机自启；先 pm2 save 存进程表，否则重启后恢复出空列表
+    bootPersist: `npm i -g pm2-windows-startup; pm2 save; pm2-startup install`,
   };
 }
 
